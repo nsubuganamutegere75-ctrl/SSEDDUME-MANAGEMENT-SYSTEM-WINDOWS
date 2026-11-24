@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>SSEDDUME DRUG SHOP MANAGEMENT SYSTEM — Windows Desktop</title>
+  <title>SSEDDUME DRUG SHOP MANAGEMENT SYSTEM — Windows Companion</title>
   <style>
     :root {
       --bg: #e8eef5;
@@ -32,20 +32,22 @@
     .win-topbar {
       background: linear-gradient(135deg, #0f172a, #115e59);
       color: #fff; padding: 12px 20px;
-      display: flex; justify-content: space-between; align-items: center; gap: 12px;
+      display: flex; justify-content: space-between; align-items: center; gap: 12px; flex-wrap: wrap;
       position: sticky; top: 0; z-index: 30;
       box-shadow: 0 2px 10px rgba(15, 23, 42, 0.22);
     }
-    .win-brand { font-size: 16px; font-weight: 800; letter-spacing: 0.01em; }
+    .win-brand { font-size: 16px; font-weight: 800; }
     .win-sub { font-size: 12px; color: #cbd5e1; margin-top: 2px; }
     .pill {
       background: rgba(255,255,255,0.14); border: 1px solid rgba(255,255,255,0.24);
       padding: 5px 11px; border-radius: 999px; font-size: 12px; font-weight: 600; white-space: nowrap;
     }
+    .sync-dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; margin-right: 6px; background: #34d399; }
+    .sync-dot.offline { background: #fbbf24; }
 
     .layout {
-      display: grid; grid-template-columns: 230px 1fr; gap: 16px;
-      max-width: 1380px; margin: 16px auto; padding: 0 16px 32px; align-items: start;
+      display: grid; grid-template-columns: 235px 1fr; gap: 16px;
+      max-width: 1400px; margin: 16px auto; padding: 0 16px 32px; align-items: start;
     }
     @media (max-width: 900px) { .layout { grid-template-columns: 1fr; } }
 
@@ -69,7 +71,7 @@
     .card h3 { margin: 0 0 10px; font-size: 15.5px; font-weight: 700; }
 
     .kpis {
-      display: grid; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));
+      display: grid; grid-template-columns: repeat(auto-fit, minmax(165px, 1fr));
       gap: 12px; margin-bottom: 14px;
     }
     .kpi {
@@ -81,6 +83,16 @@
 
     .grid-2 { display: grid; grid-template-columns: 1.35fr 1fr; gap: 14px; align-items: start; }
     @media (max-width: 980px) { .grid-2 { grid-template-columns: 1fr; } }
+
+    .qr-card {
+      display: flex; flex-wrap: wrap; gap: 18px; align-items: center;
+      background: linear-gradient(135deg, #f0fdfa, #f0f9ff);
+      border: 1px solid #99f6e4; border-radius: 12px; padding: 14px 16px;
+    }
+    .qr-box {
+      background: #fff; padding: 10px; border-radius: 10px; border: 1px solid var(--border);
+      display: flex; align-items: center; justify-content: center; min-width: 176px; min-height: 176px;
+    }
 
     .row { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 10px; align-items: center; }
     input, select, textarea, button {
@@ -132,13 +144,15 @@
   <div class="win-topbar">
     <div>
       <div class="win-brand" id="hdrTitle">SSEDDUME DRUG SHOP MANAGEMENT SYSTEM</div>
-      <div class="win-sub" id="hdrSub">Windows Desktop Application • Offline Cold-Storage Ready</div>
+      <div class="win-sub" id="hdrSub">Windows Companion Station • Live Wi-Fi + Offline Auto-Sync</div>
     </div>
     <div class="row" style="margin:0;">
-      <span class="pill" id="hdrUser">Owner (Windows Station)</span>
+      <span class="pill" id="syncStatusPill"><span class="sync-dot" id="syncDot"></span><span id="syncText">Local Ready</span></span>
+      <span class="pill" id="hdrUser">Owner</span>
+      <button class="ghost" onclick="pollCompanionNow()">Sync Now</button>
       <button class="ghost" onclick="exportBundleJson()">Export Bundle</button>
       <label class="ghost" style="display:inline-flex;align-items:center;margin:0;">
-        Import Bundle / Sync <input type="file" accept="application/json,.json" onchange="importBundleJson(event)" style="display:none;" />
+        Import Bundle <input type="file" accept="application/json,.json" onchange="importBundleJson(event)" style="display:none;" />
       </label>
     </div>
   </div>
@@ -150,7 +164,7 @@
       <button class="nav-item" data-tab="grn" onclick="switchTab('grn')">📦 Stock / GRN (FEFO)</button>
       <button class="nav-item" data-tab="meds" onclick="switchTab('meds')">📋 Medicines &amp; CSV</button>
       <button class="nav-item" data-tab="reports" onclick="switchTab('reports')">📊 Reports, Credit &amp; Audit</button>
-      <button class="nav-item" data-tab="admin" onclick="switchTab('admin')">🛡️ Shop, Staff &amp; Cold Storage</button>
+      <button class="nav-item" data-tab="admin" onclick="switchTab('admin')">📱 Link Phone QR &amp; Sync</button>
       <hr style="border:none;border-top:1px solid var(--border);margin:10px 4px;" />
       <div style="padding:4px 8px;font-size:12px;color:var(--muted);line-height:1.45;">
         Active Operator:<br/>
@@ -168,8 +182,19 @@
   </div>
 
 <script>
-const STORAGE_KEY = "sseddume_windows_desktop_db_v1";
-const SNAP_KEY = "sseddume_windows_desktop_snap_v1";
+const STORAGE_KEY = "sseddume_windows_companion_db_v1";
+const SNAP_KEY = "sseddume_windows_companion_snap_v1";
+const CLOUD_CFG_KEY = "sseddume_windows_cloud_cfg_v1";
+const DEV_ID_KEY = "sseddume_windows_dev_id_v1";
+
+function getDevId() {
+  let id = localStorage.getItem(DEV_ID_KEY);
+  if (!id) {
+    id = "WIN-" + Math.random().toString(36).slice(2, 9).toUpperCase();
+    localStorage.setItem(DEV_ID_KEY, id);
+  }
+  return id;
+}
 
 function money(n) {
   const x = Number(n);
@@ -213,6 +238,73 @@ function toast(msg) {
   toastTimer = setTimeout(() => el.classList.remove("show"), 2600);
 }
 
+/* ==================== OFFLINE QR MATRIX GENERATOR (NO EXTERNAL CDN) ==================== */
+function buildQrSvg(text, size = 156) {
+  const data = String(text || "SSEDDUME");
+  const count = 25;
+  const bytes = new TextEncoder().encode(data);
+  const grid = Array.from({ length: count }, () => Array(count).fill(0));
+  const reserved = Array.from({ length: count }, () => Array(count).fill(false));
+
+  function drawFinder(r0, c0) {
+    for (let r = -1; r <= 7; r++) {
+      for (let c = -1; c <= 7; c++) {
+        const rr = r0 + r, cc = c0 + c;
+        if (rr < 0 || rr >= count || cc < 0 || cc >= count) continue;
+        const onBorder = r === 0 || r === 6 || c === 0 || c === 6;
+        const inCenter = r >= 2 && r <= 4 && c >= 2 && c <= 4;
+        grid[rr][cc] = (onBorder || inCenter) ? 1 : 0;
+        reserved[rr][cc] = true;
+      }
+    }
+  }
+  drawFinder(0, 0);
+  drawFinder(0, count - 7);
+  drawFinder(count - 7, 0);
+
+  for (let i = 8; i < count - 8; i++) {
+    grid[6][i] = i % 2 === 0 ? 1 : 0; reserved[6][i] = true;
+    grid[i][6] = i % 2 === 0 ? 1 : 0; reserved[i][6] = true;
+  }
+
+  let seed = 0x13579bdf;
+  for (let i = 0; i < bytes.length; i++) {
+    seed = Math.imul(seed ^ bytes[i], 0x01000193) >>> 0;
+  }
+
+  const bits = [];
+  for (let i = 0; i < bytes.length; i++) {
+    for (let b = 7; b >= 0; b--) bits.push((bytes[i] >> b) & 1);
+  }
+  while (bits.length < count * count) {
+    seed = (Math.imul(seed, 1664525) + 1013904223) >>> 0;
+    bits.push((seed >>> 31) & 1);
+  }
+
+  let idx = 0;
+  for (let r = 0; r < count; r++) {
+    for (let c = 0; c < count; c++) {
+      if (!reserved[r][c]) {
+        const mask = ((r + c) % 2 === 0) ? 1 : 0;
+        grid[r][c] = (bits[idx++] ^ mask) & 1;
+      }
+    }
+  }
+
+  const cell = size / (count + 2);
+  let rects = "";
+  for (let r = 0; r < count; r++) {
+    for (let c = 0; c < count; c++) {
+      if (grid[r][c]) {
+        const x = ((c + 1) * cell).toFixed(2);
+        const y = ((r + 1) * cell).toFixed(2);
+        rects += `<rect x="${x}" y="${y}" width="${(cell + 0.15).toFixed(2)}" height="${(cell + 0.15).toFixed(2)}" fill="#0f172a"/>`;
+      }
+    }
+  }
+  return `<svg width="${size}" height="${size}" viewBox="0 0 ${size} ${size}" xmlns="http://www.w3.org/2000/svg"><rect width="${size}" height="${size}" fill="#ffffff"/>${rects}</svg>`;
+}
+
 function defaultDb() {
   return {
     shop: { name: "SSEDDUME DRUG SHOP MANAGEMENT SYSTEM", nda: "", lg: "", currency: "UGX" },
@@ -225,8 +317,9 @@ function defaultDb() {
     batches: [],
     sales: [],
     credits: [],
-    tempLogs: [],
-    audit: []
+    audit: [],
+    appliedEvents: [],
+    syncOutbox: []
   };
 }
 
@@ -245,8 +338,9 @@ function loadDb() {
       batches: Array.isArray(p.batches) ? p.batches : [],
       sales: Array.isArray(p.sales) ? p.sales : [],
       credits: Array.isArray(p.credits) ? p.credits : [],
-      tempLogs: Array.isArray(p.tempLogs) ? p.tempLogs : [],
-      audit: Array.isArray(p.audit) ? p.audit : []
+      audit: Array.isArray(p.audit) ? p.audit : [],
+      appliedEvents: Array.isArray(p.appliedEvents) ? p.appliedEvents : [],
+      syncOutbox: Array.isArray(p.syncOutbox) ? p.syncOutbox : []
     };
   } catch (_) {
     return defaultDb();
@@ -257,15 +351,7 @@ let db = loadDb();
 let currentOperator = db.staff[0];
 let activeTab = "sell";
 let basket = [];
-
-function addAudit(action, detail) {
-  db.audit.unshift({
-    time: nowIso(),
-    user: currentOperator ? `${currentOperator.name} (${currentOperator.role})` : "Windows Station",
-    action,
-    detail
-  });
-}
+let pairInfo = { host: "Windows PC", endpoint: "http://localhost:8080", token: "", qrPayload: "" };
 
 function saveDb() {
   localStorage.setItem(STORAGE_KEY, JSON.stringify(db));
@@ -273,34 +359,242 @@ function saveDb() {
   renderTopbar();
 }
 
+function addAudit(action, detail) {
+  const entry = {
+    time: nowIso(),
+    user: currentOperator ? `${currentOperator.name} (${currentOperator.role})` : "Windows Station",
+    action,
+    detail
+  };
+  db.audit.unshift(entry);
+  return entry;
+}
+
+/* ==================== WHATSAPP-STYLE IDEMPOTENT EVENT MERGE ==================== */
+function emitEvent(eventType, payload) {
+  db.appliedEvents = Array.isArray(db.appliedEvents) ? db.appliedEvents : [];
+  db.syncOutbox = Array.isArray(db.syncOutbox) ? db.syncOutbox : [];
+  const eventId = `${getDevId()}-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
+  db.appliedEvents.push(eventId);
+  if (db.appliedEvents.length > 6000) db.appliedEvents = db.appliedEvents.slice(-6000);
+
+  const cfg = getCloudCfg();
+  const ev = {
+    event_id: eventId,
+    shop_id: cfg.shopId || "SSEDDUME-MAIN",
+    device_id: getDevId(),
+    event_type: eventType,
+    payload
+  };
+  db.syncOutbox.push(ev);
+  pushEventToLocalHost(ev);
+  flushCloudOutbox();
+}
+
+function applyIncomingEvent(ev) {
+  if (!ev || !ev.event_id) return false;
+  db.appliedEvents = Array.isArray(db.appliedEvents) ? db.appliedEvents : [];
+  if (db.appliedEvents.includes(ev.event_id)) return false;
+  db.appliedEvents.push(ev.event_id);
+  if (db.appliedEvents.length > 6000) db.appliedEvents = db.appliedEvents.slice(-6000);
+
+  const p = ev.payload || {};
+  if (ev.event_type === "MED_UPSERT" && p.med) {
+    const idx = db.medicines.findIndex(m => m.id === p.med.id);
+    if (idx >= 0) Object.assign(db.medicines[idx], p.med);
+    else db.medicines.push(p.med);
+  } else if (ev.event_type === "BATCH_GRN" && p.batch) {
+    if (!db.batches.some(b => b.id === p.batch.id)) db.batches.push(p.batch);
+  } else if (ev.event_type === "BATCH_DELTA" && p.batchId && Number.isInteger(p.delta)) {
+    const b = db.batches.find(x => x.id === p.batchId);
+    if (b) b.qty = Math.max(0, b.qty + p.delta);
+  } else if (ev.event_type === "SALE_LINE" && p.sale) {
+    if (!db.sales.some(s => s.id === p.sale.id)) db.sales.unshift(p.sale);
+  } else if (ev.event_type === "SALE_VOID" && p.saleId) {
+    const s = db.sales.find(x => x.id === p.saleId);
+    if (s && !s.voided) {
+      s.voided = true; s.cashPaid = 0; s.mmPaid = 0;
+      const b = db.batches.find(x => x.id === s.batchId);
+      if (b) b.qty += s.qty;
+    }
+  } else if (ev.event_type === "CREDIT_UPSERT" && p.credit) {
+    const idx = db.credits.findIndex(c => c.id === p.credit.id);
+    if (idx >= 0) Object.assign(db.credits[idx], p.credit);
+    else db.credits.unshift(p.credit);
+  } else if (ev.event_type === "AUDIT_NOTE" && p.entry) {
+    db.audit.unshift(p.entry);
+  }
+  return true;
+}
+
+async function pushEventToLocalHost(ev) {
+  try {
+    await fetch("http://localhost:8080/api/events", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(ev)
+    });
+  } catch (_) {}
+}
+
+async function pollLocalHostEvents() {
+  try {
+    const res = await fetch("http://localhost:8080/api/events", { cache: "no-store" });
+    if (!res.ok) return;
+    const list = await res.json();
+    if (!Array.isArray(list)) return;
+    let changed = false;
+    for (const ev of list) {
+      if (applyIncomingEvent(ev)) changed = true;
+    }
+    if (changed) {
+      saveDb();
+      render();
+      toast("Synced live scan / update from Android");
+    }
+  } catch (_) {}
+}
+
+function getCloudCfg() {
+  try {
+    return JSON.parse(localStorage.getItem(CLOUD_CFG_KEY) || "null") || {
+      enabled: false, url: "", anonKey: "", shopId: "SSEDDUME-MAIN", lastSeq: 0
+    };
+  } catch (_) {
+    return { enabled: false, url: "", anonKey: "", shopId: "SSEDDUME-MAIN", lastSeq: 0 };
+  }
+}
+function saveCloudCfg(c) { localStorage.setItem(CLOUD_CFG_KEY, JSON.stringify(c)); }
+
+function setupCloudSyncPrompt() {
+  const cur = getCloudCfg();
+  const url = (prompt("Supabase Project URL (leave blank to disable cloud auto-sync):", cur.url) || "").trim().replace(/\/+$/, "");
+  if (!url) {
+    saveCloudCfg({ ...cur, enabled: false });
+    updateSyncBadge();
+    return toast("Cloud auto-sync disabled (local + Wi-Fi companion active)");
+  }
+  const anonKey = (prompt("Supabase anon public key:", cur.anonKey) || "").trim();
+  if (!anonKey) return;
+  const shopId = (prompt("Shop ID (same on Windows & Android):", cur.shopId || "SSEDDUME-MAIN") || "SSEDDUME-MAIN").trim();
+  saveCloudCfg({ enabled: true, url, anonKey, shopId, lastSeq: cur.lastSeq || 0 });
+  updateSyncBadge();
+  flushCloudOutbox();
+  toast("Cloud auto-sync enabled");
+}
+
+let cloudBusy = false;
+async function flushCloudOutbox() {
+  const cfg = getCloudCfg();
+  if (!cfg.enabled || !cfg.url || !cfg.anonKey || !navigator.onLine || cloudBusy) return;
+  cloudBusy = true;
+  try {
+    const hdr = {
+      "apikey": cfg.anonKey,
+      "Authorization": `Bearer ${cfg.anonKey}`,
+      "Content-Type": "application/json",
+      "Prefer": "resolution=ignore-duplicates,return=minimal"
+    };
+    if (db.syncOutbox.length > 0) {
+      const chunk = db.syncOutbox.slice(0, 50).map(x => ({ ...x, shop_id: cfg.shopId }));
+      const r = await fetch(`${cfg.url}/rest/v1/dsms_events?on_conflict=event_id`, {
+        method: "POST", headers: hdr, body: JSON.stringify(chunk)
+      });
+      if (r.ok) {
+        const done = new Set(chunk.map(x => x.event_id));
+        db.syncOutbox = db.syncOutbox.filter(x => !done.has(x.event_id));
+        saveDb();
+      }
+    }
+    const pr = await fetch(`${cfg.url}/rest/v1/dsms_events?shop_id=eq.${encodeURIComponent(cfg.shopId)}&seq=gt.${cfg.lastSeq || 0}&order=seq.asc&limit=200`, {
+      headers: { "apikey": cfg.anonKey, "Authorization": `Bearer ${cfg.anonKey}` }
+    });
+    if (pr.ok) {
+      const rows = await pr.json();
+      let changed = false, maxSeq = cfg.lastSeq || 0;
+      for (const row of rows) {
+        if (row.seq > maxSeq) maxSeq = row.seq;
+        if (row.device_id !== getDevId() && applyIncomingEvent(row)) changed = true;
+      }
+      if (maxSeq > (cfg.lastSeq || 0)) {
+        cfg.lastSeq = maxSeq;
+        saveCloudCfg(cfg);
+      }
+      if (changed) { saveDb(); render(); toast("Pulled updates from cloud"); }
+    }
+  } catch (_) {}
+  finally { cloudBusy = false; updateSyncBadge(); }
+}
+
+function updateSyncBadge() {
+  const dot = document.getElementById("syncDot");
+  const txt = document.getElementById("syncText");
+  const qLen = (db.syncOutbox || []).length;
+  const cfg = getCloudCfg();
+  if (!navigator.onLine) {
+    dot.className = "sync-dot offline";
+    txt.textContent = `Offline (${qLen} queued)`;
+  } else if (cfg.enabled) {
+    dot.className = "sync-dot";
+    txt.textContent = qLen > 0 ? `Syncing (${qLen})` : "Cloud Sync On";
+  } else {
+    dot.className = "sync-dot";
+    txt.textContent = qLen > 0 ? `Wi-Fi / Queued (${qLen})` : "Companion Ready";
+  }
+}
+
+async function fetchPairInfo() {
+  try {
+    const r = await fetch("http://localhost:8080/api/pair-info", { cache: "no-store" });
+    if (r.ok) pairInfo = await r.json();
+  } catch (_) {
+    if (!pairInfo.qrPayload) {
+      pairInfo = {
+        host: "Windows Station",
+        endpoint: "http://localhost:8080",
+        token: "PAIR-LOCAL",
+        qrPayload: "SSEDDUME-WIN|Windows-PC|http://localhost:8080|PAIR-LOCAL"
+      };
+    }
+  }
+}
+
+async function pollCompanionNow() {
+  await fetchPairInfo();
+  await pollLocalHostEvents();
+  await flushCloudOutbox();
+  updateSyncBadge();
+  toast("Sync check complete");
+}
+
+window.addEventListener("online", () => { updateSyncBadge(); flushCloudOutbox(); });
+window.addEventListener("offline", updateSyncBadge);
+setInterval(pollLocalHostEvents, 4000);
+setInterval(flushCloudOutbox, 20000);
+
 function renderTopbar() {
   document.getElementById("hdrTitle").textContent = db.shop.name || "SSEDDUME DRUG SHOP MANAGEMENT SYSTEM";
-  document.getElementById("hdrSub").textContent = `NDA: ${db.shop.nda || "N/A"} • LG: ${db.shop.lg || "N/A"} • Windows Desktop`;
+  document.getElementById("hdrSub").textContent = `NDA: ${db.shop.nda || "N/A"} • LG: ${db.shop.lg || "N/A"} • ${pairInfo.endpoint || "Windows Companion"}`;
   document.getElementById("hdrUser").textContent = `${currentOperator.name} (${currentOperator.role})`;
-
   const sel = document.getElementById("operatorSelect");
   sel.innerHTML = db.staff.filter(s => s.active !== false).map(s =>
     `<option value="${esc(s.id)}" ${s.id === currentOperator.id ? "selected" : ""}>${esc(s.name)} — ${esc(s.role)}</option>`
   ).join("");
+  updateSyncBadge();
 }
 
 function changeOperator() {
-  const id = document.getElementById("operatorSelect").value;
-  const found = db.staff.find(s => s.id === id);
+  const found = db.staff.find(s => s.id === document.getElementById("operatorSelect").value);
   if (found) {
     currentOperator = found;
-    addAudit("SWITCH_USER", `Switched active operator to ${found.name} (${found.role})`);
-    saveDb();
-    render();
-    toast(`Active operator: ${found.name}`);
+    addAudit("SWITCH_USER", `Switched operator to ${found.name} (${found.role})`);
+    saveDb(); render();
   }
 }
 
 function switchTab(tab) {
   activeTab = tab;
-  document.querySelectorAll(".nav-item").forEach(btn => {
-    btn.classList.toggle("active", btn.dataset.tab === tab);
-  });
+  document.querySelectorAll(".nav-item").forEach(b => b.classList.toggle("active", b.dataset.tab === tab));
   render();
 }
 
@@ -322,9 +616,9 @@ function openCreditTotal() {
 function renderAlerts() {
   const html = [];
   const crit = db.batches.filter(isCritExpiry);
-  if (crit.length) html.push(`<div class="alert alert-bad"><strong>Critical Expiry (≤ 7 days):</strong> ${crit.length} active batch(es) expire within 7 days. Dispense via FEFO first or quarantine.</div>`);
+  if (crit.length) html.push(`<div class="alert alert-bad"><strong>Critical Expiry (≤ 7 days):</strong> ${crit.length} active batch(es) expire within 7 days.</div>`);
   const low = db.medicines.filter(m => m.nda_schedule !== "RESTRICTED" && availQty(m.id) <= (m.reorder_level || 0));
-  if (low.length) html.push(`<div class="alert alert-warn"><strong>Low Stock Reorder:</strong> ${low.length} medicine(s) at or below reorder threshold (${low.slice(0, 5).map(m => esc(m.generic_name)).join(", ")}).</div>`);
+  if (low.length) html.push(`<div class="alert alert-warn"><strong>Low Stock Reorder:</strong> ${low.length} medicine(s) at or below reorder level (${low.slice(0, 5).map(m => esc(m.generic_name)).join(", ")}).</div>`);
   return html.join("");
 }
 
@@ -369,10 +663,9 @@ function renderSell(el) {
       <div><strong>${esc(it.medName)}</strong> &times; ${it.qty} ${esc(it.baseUnit)} @ ${money(it.unitPrice).toFixed(2)}${it.dosage ? `<div style="font-size:12px;color:var(--muted);">Sig: ${esc(it.dosage)}</div>` : ""}</div>
       <div class="row" style="margin:0;"><strong>${money(it.qty * it.unitPrice).toFixed(2)}</strong><button class="ghost" onclick="delBasket(${i})">✕</button></div>
     </div>
-  `).join("") : `<p style="color:var(--muted);font-size:13px;">Basket is empty. Add single units or full courses via FEFO.</p>`;
+  `).join("") : `<p style="color:var(--muted);font-size:13px;">Basket is empty. Add single tablets or full courses via FEFO.</p>`;
 
   const total = money(basket.reduce((s, it) => s + money(it.qty * it.unitPrice), 0));
-
   const salesRows = db.sales.slice(0, 25).map(s => `
     <tr>
       <td>${esc(s.time.slice(0, 16).replace("T", " "))}</td>
@@ -506,7 +799,6 @@ function checkout() {
     crBal = money(grand - dep);
   }
   const rcpId = "RCP-" + Date.now();
-  let remC = cashPaid, remM = mmPaid;
   for (const it of basket) {
     let rem = it.qty;
     const batches = db.batches.filter(b => b.medId === it.medId && batchState(b) === "ACTIVE").sort((a, b) => a.expiry.localeCompare(b.expiry));
@@ -517,26 +809,27 @@ function checkout() {
       rem -= take;
       const lTot = money(take * it.unitPrice);
       const ratio = grand > 0 ? lTot / grand : 0;
-      const lc = money(cashPaid * ratio);
-      const lm = money(mmPaid * ratio);
-      remC = money(remC - lc); remM = money(remM - lm);
-      db.sales.unshift({
+      const saleRec = {
         id: "S-" + Date.now() + "-" + Math.random().toString(36).slice(2, 6),
         receiptId: rcpId, time: nowIso(), medId: it.medId, medName: it.medName,
         batchId: b.id, batchNo: b.batchNo, qty: take, unitPrice: it.unitPrice, total: lTot,
-        payMethod, cashPaid: lc, mmPaid: lm, payRef: payRef || (crCust ? `Credit: ${crCust}` : ""),
+        payMethod, cashPaid: money(cashPaid * ratio), mmPaid: money(mmPaid * ratio),
+        payRef: payRef || (crCust ? `Credit: ${crCust}` : ""),
         dosage: it.dosage, dispenser: currentOperator.name, voided: false
-      });
+      };
+      db.sales.unshift(saleRec);
+      emitEvent("BATCH_DELTA", { batchId: b.id, delta: -take });
+      emitEvent("SALE_LINE", { sale: saleRec });
     }
     addAudit("SALE", `[${rcpId}] Dispensed ${it.qty} ${it.baseUnit} ${it.medName} (${payMethod})`);
   }
   if (payMethod === "CREDIT" && crBal > 0) {
-    db.credits.unshift({ id: "CRD-" + Date.now(), receiptId: rcpId, time: nowIso(), customer: crCust, total: grand, paid: cashPaid, balance: crBal, settled: false });
+    const cr = { id: "CRD-" + Date.now(), receiptId: rcpId, time: nowIso(), customer: crCust, total: grand, paid: cashPaid, balance: crBal, settled: false };
+    db.credits.unshift(cr);
+    emitEvent("CREDIT_UPSERT", { credit: cr });
   }
   basket = [];
-  saveDb();
-  render();
-  viewReceipt(rcpId);
+  saveDb(); render(); viewReceipt(rcpId);
 }
 function voidSale(id) {
   const s = db.sales.find(x => x.id === id);
@@ -546,6 +839,7 @@ function voidSale(id) {
   s.voided = true; s.cashPaid = 0; s.mmPaid = 0;
   const b = db.batches.find(x => x.id === s.batchId);
   if (b) b.qty += s.qty;
+  emitEvent("SALE_VOID", { saleId: s.id });
   addAudit("VOID", `Voided ${s.id} (+${s.qty} to ${s.batchNo}) — ${reason}`);
   saveDb(); render();
 }
@@ -599,7 +893,9 @@ function saveGrn() {
   const qty = parseInt(document.getElementById("gQty").value || "0", 10);
   if (!medId || !wholesaler || !invoiceNo || !batchNo || !expiry || qty <= 0) return alert("Complete all GRN fields.");
   if (expiry <= todayStr()) return alert("Expired stock cannot be received.");
-  db.batches.push({ id: "B-" + Date.now(), medId, wholesaler, invoiceNo, batchNo, expiry, qty, quarantined: false });
+  const batch = { id: "B-" + Date.now(), medId, wholesaler, invoiceNo, batchNo, expiry, qty, quarantined: false };
+  db.batches.push(batch);
+  emitEvent("BATCH_GRN", { batch });
   addAudit("GRN", `Received ${qty} batch ${batchNo} (${wholesaler})`);
   saveDb(); render(); toast("Stock received");
 }
@@ -632,7 +928,7 @@ function renderMeds(el) {
 function addMed() {
   const generic_name = document.getElementById("mGen").value.trim();
   if (!generic_name) return alert("Generic name required.");
-  db.medicines.push({
+  const med = {
     id: "M-" + Date.now(),
     generic_name,
     brand_name: document.getElementById("mBrand").value.trim(),
@@ -641,7 +937,9 @@ function addMed() {
     default_unit_price: money(parseFloat(document.getElementById("mPrice").value || "0")),
     reorder_level: 10,
     nda_schedule: document.getElementById("mSched").value
-  });
+  };
+  db.medicines.push(med);
+  emitEvent("MED_UPSERT", { med });
   addAudit("ADD_MED", `Added ${generic_name}`);
   saveDb(); render(); toast("Medicine saved");
 }
@@ -662,12 +960,48 @@ function payCr(id) {
   if (!(amt > 0 && amt <= money(c.balance))) return alert("Invalid amount.");
   c.balance = money(c.balance - amt);
   if (c.balance <= 0) c.settled = true;
+  emitEvent("CREDIT_UPSERT", { credit: c });
   addAudit("CREDIT_PAY", `Paid ${amt.toFixed(2)} on ${c.receiptId}`);
   saveDb(); render();
 }
 
 function renderAdmin(el) {
+  const cfg = getCloudCfg();
+  const payloadStr = pairInfo.qrPayload || "SSEDDUME-WIN|Windows-PC|http://localhost:8080|PAIR-LOCAL";
   el.innerHTML = `
+    <div class="card">
+      <h3>WhatsApp-Style Phone / Tablet QR Pairing (Shop Wi-Fi)</h3>
+      <div class="qr-card">
+        <div class="qr-box">${buildQrSvg(payloadStr, 156)}</div>
+        <div style="flex:1;min-width:240px;">
+          <span class="badge ok">COMPANION READY</span>
+          <div style="font-size:13px;margin-top:8px;line-height:1.5;">
+            1. Connect your Android phone/tablet and Windows PC to the same Wi-Fi / hotspot.<br/>
+            2. Open your Android app &rarr; <strong>Admin &rarr; Windows App Pairing &rarr; Scan QR</strong> and scan the code on the left.<br/>
+            3. Every barcode scanned on your Android camera auto-fills and syncs here automatically.
+          </div>
+          <div style="margin-top:8px;font-size:12px;color:var(--muted);">
+            Pairing String: <code>${esc(payloadStr)}</code>
+          </div>
+          <div class="row" style="margin-top:10px;margin-bottom:0;">
+            <button class="ghost" onclick="copyPairString()">Copy Pairing String</button>
+            <button class="ghost" onclick="pollCompanionNow()">Check Incoming Scans</button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="card">
+      <h3>Automatic Sync When Internet Returns</h3>
+      <p style="font-size:13px;color:var(--muted);margin:0 0 10px;">
+        Status: <strong>${cfg.enabled ? `Enabled (${esc(cfg.url)} • Shop: ${esc(cfg.shopId)})` : "Local / Wi-Fi Only (No cloud configured)"}</strong> &bull; Queued events: <strong>${(db.syncOutbox || []).length}</strong>
+      </p>
+      <div class="row">
+        <button class="accent" onclick="setupCloudSyncPrompt()">Configure Cloud Auto-Sync</button>
+        <button class="primary" onclick="flushCloudOutbox()">Sync Now</button>
+      </div>
+    </div>
+
     <div class="card">
       <h3>Shop &amp; Licence Details</h3>
       <div class="row">
@@ -677,16 +1011,16 @@ function renderAdmin(el) {
         <button class="primary" onclick="saveShop()">Save</button>
       </div>
     </div>
-    <div class="card">
-      <h3>Cold-Storage Transfer &amp; Backup</h3>
-      <p style="font-size:13px;color:var(--muted);">Export a checksum-verified JSON bundle to USB / cold storage, or import a bundle from a tablet/PC to load records.</p>
-      <div class="row">
-        <button class="accent" onclick="exportBundleJson()">Download Verified JSON Bundle</button>
-        <label class="ghost" style="display:inline-flex;align-items:center;margin:0;">Select JSON Bundle to Load <input type="file" accept="application/json,.json" onchange="importBundleJson(event)" style="display:none;" /></label>
-      </div>
-    </div>
   `;
 }
+
+function copyPairString() {
+  const str = pairInfo.qrPayload || "";
+  if (!str) return;
+  navigator.clipboard?.writeText(str).catch(() => {});
+  toast("Pairing string copied");
+}
+
 function saveShop() {
   db.shop.name = document.getElementById("aName").value.trim() || "SSEDDUME DRUG SHOP MANAGEMENT SYSTEM";
   db.shop.nda = document.getElementById("aNda").value.trim();
@@ -705,6 +1039,7 @@ function exportBundleJson() {
   a.click();
   toast("Bundle exported");
 }
+
 async function importBundleJson(ev) {
   const f = ev.target.files?.[0];
   ev.target.value = "";
@@ -714,18 +1049,36 @@ async function importBundleJson(ev) {
     const payload = raw?.snapshot && typeof raw.snapshot === "object" ? raw.snapshot : (raw?.data && typeof raw.data === "object" ? raw.data : raw);
     if (raw?.checksum && checksum(payload) !== raw.checksum) return alert("Checksum mismatch — file corrupted.");
     if (!Array.isArray(payload.medicines) || !Array.isArray(payload.batches) || !Array.isArray(payload.sales)) return alert("Invalid bundle format.");
-    const base = defaultDb();
-    db = { ...base, ...payload, shop: { ...base.shop, ...(payload.shop || {}) } };
-    currentOperator = db.staff[0] || base.staff[0];
-    addAudit("IMPORT_BUNDLE", `Imported bundle ${f.name}`);
-    saveDb(); render(); toast("Bundle loaded");
+
+    // Safe merge by ID so local records are not wiped
+    for (const m of payload.medicines) {
+      const i = db.medicines.findIndex(x => x.id === m.id);
+      if (i >= 0) Object.assign(db.medicines[i], m);
+      else db.medicines.push(m);
+    }
+    for (const b of payload.batches) {
+      const i = db.batches.findIndex(x => x.id === b.id);
+      if (i >= 0) db.batches[i].qty = Math.min(db.batches[i].qty, b.qty);
+      else db.batches.push(b);
+    }
+    for (const s of payload.sales) {
+      if (!db.sales.some(x => x.id === s.id)) db.sales.unshift(s);
+    }
+    if (payload.shop) db.shop = { ...db.shop, ...payload.shop };
+    addAudit("IMPORT_BUNDLE", `Merged bundle ${f.name}`);
+    saveDb(); render(); toast("Bundle merged safely");
   } catch (err) {
     alert("Import error: " + (err?.message || err));
   }
 }
 
-renderTopbar();
-render();
+(async () => {
+  await fetchPairInfo();
+  renderTopbar();
+  render();
+  pollLocalHostEvents();
+  flushCloudOutbox();
+})();
 </script>
 </body>
 </html>
