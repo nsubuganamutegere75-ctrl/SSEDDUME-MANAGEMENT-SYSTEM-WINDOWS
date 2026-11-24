@@ -1,0 +1,731 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>SSEDDUME DRUG SHOP MANAGEMENT SYSTEM — Windows Desktop</title>
+  <style>
+    :root {
+      --bg: #e8eef5;
+      --surface: #ffffff;
+      --surface-2: #f8fafc;
+      --primary: #0f766e;
+      --primary-dark: #115e59;
+      --primary-soft: #ccfbf1;
+      --accent: #0369a1;
+      --accent-soft: #e0f2fe;
+      --danger: #b91c1c;
+      --danger-soft: #fee2e2;
+      --warn: #b45309;
+      --warn-soft: #fef3c7;
+      --ok: #15803d;
+      --ok-soft: #dcfce7;
+      --text: #0f172a;
+      --muted: #64748b;
+      --border: #cbd5e1;
+      --radius: 12px;
+      --shadow: 0 4px 16px rgba(15, 23, 42, 0.06);
+    }
+    * { box-sizing: border-box; font-family: "Segoe UI", Inter, system-ui, sans-serif; }
+    body { margin: 0; background: var(--bg); color: var(--text); min-height: 100vh; }
+
+    .win-topbar {
+      background: linear-gradient(135deg, #0f172a, #115e59);
+      color: #fff; padding: 12px 20px;
+      display: flex; justify-content: space-between; align-items: center; gap: 12px;
+      position: sticky; top: 0; z-index: 30;
+      box-shadow: 0 2px 10px rgba(15, 23, 42, 0.22);
+    }
+    .win-brand { font-size: 16px; font-weight: 800; letter-spacing: 0.01em; }
+    .win-sub { font-size: 12px; color: #cbd5e1; margin-top: 2px; }
+    .pill {
+      background: rgba(255,255,255,0.14); border: 1px solid rgba(255,255,255,0.24);
+      padding: 5px 11px; border-radius: 999px; font-size: 12px; font-weight: 600; white-space: nowrap;
+    }
+
+    .layout {
+      display: grid; grid-template-columns: 230px 1fr; gap: 16px;
+      max-width: 1380px; margin: 16px auto; padding: 0 16px 32px; align-items: start;
+    }
+    @media (max-width: 900px) { .layout { grid-template-columns: 1fr; } }
+
+    .sidebar {
+      background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius);
+      padding: 12px; box-shadow: var(--shadow); position: sticky; top: 72px;
+    }
+    .nav-item {
+      width: 100%; text-align: left; padding: 10px 12px; border-radius: 9px;
+      border: none; background: transparent; color: var(--text); font-weight: 600;
+      font-size: 13.5px; cursor: pointer; display: flex; align-items: center; gap: 8px;
+      margin-bottom: 4px;
+    }
+    .nav-item:hover { background: var(--surface-2); }
+    .nav-item.active { background: var(--primary-soft); color: var(--primary-dark); font-weight: 700; }
+
+    .card {
+      background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius);
+      padding: 16px 18px; margin-bottom: 14px; box-shadow: var(--shadow);
+    }
+    .card h3 { margin: 0 0 10px; font-size: 15.5px; font-weight: 700; }
+
+    .kpis {
+      display: grid; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));
+      gap: 12px; margin-bottom: 14px;
+    }
+    .kpi {
+      background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius);
+      padding: 12px 14px; box-shadow: var(--shadow);
+    }
+    .kpi-lbl { font-size: 11px; text-transform: uppercase; color: var(--muted); font-weight: 700; }
+    .kpi-val { font-size: 19px; font-weight: 800; margin-top: 4px; font-variant-numeric: tabular-nums; }
+
+    .grid-2 { display: grid; grid-template-columns: 1.35fr 1fr; gap: 14px; align-items: start; }
+    @media (max-width: 980px) { .grid-2 { grid-template-columns: 1fr; } }
+
+    .row { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 10px; align-items: center; }
+    input, select, textarea, button {
+      min-height: 38px; padding: 7px 11px; border-radius: 8px;
+      border: 1px solid var(--border); font-size: 13.5px; background: #fff; color: var(--text);
+    }
+    button { cursor: pointer; font-weight: 600; }
+    button.primary { background: var(--primary); color: #fff; border-color: var(--primary); }
+    button.primary:hover { background: var(--primary-dark); }
+    button.secondary { background: #1e293b; color: #fff; border-color: #1e293b; }
+    button.accent { background: var(--accent); color: #fff; border-color: var(--accent); }
+    button.danger { background: var(--danger); color: #fff; border-color: var(--danger); }
+    button.ghost { background: var(--surface-2); color: var(--text); border-color: var(--border); min-height: 32px; padding: 4px 9px; font-size: 12px; }
+
+    .table-wrap { overflow-x: auto; border: 1px solid var(--border); border-radius: 10px; }
+    table { width: 100%; border-collapse: collapse; font-size: 13px; background: #fff; }
+    th { background: var(--surface-2); color: var(--muted); font-size: 11px; text-transform: uppercase; padding: 9px 10px; border-bottom: 1px solid var(--border); text-align: left; }
+    td { padding: 8px 10px; border-bottom: 1px solid #f1f5f9; vertical-align: middle; font-variant-numeric: tabular-nums; }
+
+    .badge { display: inline-block; padding: 2px 8px; border-radius: 999px; font-size: 11px; font-weight: 700; }
+    .ok { background: var(--ok-soft); color: var(--ok); }
+    .warn { background: var(--warn-soft); color: var(--warn); }
+    .bad { background: var(--danger-soft); color: var(--danger); }
+    .info { background: var(--accent-soft); color: var(--accent); }
+
+    .alert { border-radius: 10px; padding: 10px 13px; margin-bottom: 10px; font-size: 12.5px; border: 1px solid transparent; }
+    .alert-warn { background: var(--warn-soft); border-color: #fcd34d; color: #78350f; }
+    .alert-bad { background: var(--danger-soft); border-color: #fca5a5; color: #7f1d1d; }
+    .alert-info { background: var(--accent-soft); border-color: #7dd3fc; color: #0c4a6e; }
+
+    #toast {
+      position: fixed; bottom: 20px; right: 20px; background: #0f172a; color: #fff;
+      padding: 10px 16px; border-radius: 10px; font-size: 13px; font-weight: 600;
+      opacity: 0; pointer-events: none; transition: opacity 0.2s ease; z-index: 200;
+    }
+    #toast.show { opacity: 1; }
+
+    .modal { display: none; position: fixed; inset: 0; background: rgba(2, 6, 23, 0.78); z-index: 150; align-items: center; justify-content: center; padding: 16px; }
+    .modal-box { background: #fff; color: var(--text); border-radius: 12px; padding: 18px; width: 100%; max-width: 500px; max-height: 88vh; overflow-y: auto; }
+    @media print {
+      .win-topbar, .layout .sidebar, .no-print, #toast { display: none !important; }
+      .layout { display: block; margin: 0; padding: 0; }
+      .modal { position: static; background: none; display: block !important; }
+      .modal-box { box-shadow: none; max-width: 100%; }
+    }
+  </style>
+</head>
+<body>
+  <div class="win-topbar">
+    <div>
+      <div class="win-brand" id="hdrTitle">SSEDDUME DRUG SHOP MANAGEMENT SYSTEM</div>
+      <div class="win-sub" id="hdrSub">Windows Desktop Application • Offline Cold-Storage Ready</div>
+    </div>
+    <div class="row" style="margin:0;">
+      <span class="pill" id="hdrUser">Owner (Windows Station)</span>
+      <button class="ghost" onclick="exportBundleJson()">Export Bundle</button>
+      <label class="ghost" style="display:inline-flex;align-items:center;margin:0;">
+        Import Bundle / Sync <input type="file" accept="application/json,.json" onchange="importBundleJson(event)" style="display:none;" />
+      </label>
+    </div>
+  </div>
+
+  <div class="layout">
+    <aside class="sidebar">
+      <div style="font-size:11px;font-weight:700;color:var(--muted);text-transform:uppercase;padding:4px 8px 8px;">Windows Station</div>
+      <button class="nav-item active" data-tab="sell" onclick="switchTab('sell')">💊 Dispensing &amp; POS</button>
+      <button class="nav-item" data-tab="grn" onclick="switchTab('grn')">📦 Stock / GRN (FEFO)</button>
+      <button class="nav-item" data-tab="meds" onclick="switchTab('meds')">📋 Medicines &amp; CSV</button>
+      <button class="nav-item" data-tab="reports" onclick="switchTab('reports')">📊 Reports, Credit &amp; Audit</button>
+      <button class="nav-item" data-tab="admin" onclick="switchTab('admin')">🛡️ Shop, Staff &amp; Cold Storage</button>
+      <hr style="border:none;border-top:1px solid var(--border);margin:10px 4px;" />
+      <div style="padding:4px 8px;font-size:12px;color:var(--muted);line-height:1.45;">
+        Active Operator:<br/>
+        <select id="operatorSelect" onchange="changeOperator()" style="width:100%;margin-top:4px;"></select>
+      </div>
+    </aside>
+
+    <main id="mainView"></main>
+  </div>
+
+  <div id="toast"></div>
+
+  <div id="receiptModal" class="modal">
+    <div class="modal-box" id="receiptBox"></div>
+  </div>
+
+<script>
+const STORAGE_KEY = "sseddume_windows_desktop_db_v1";
+const SNAP_KEY = "sseddume_windows_desktop_snap_v1";
+
+function money(n) {
+  const x = Number(n);
+  return Number.isFinite(x) ? Math.round((x + Number.EPSILON) * 100) / 100 : 0;
+}
+function todayStr() {
+  const d = new Date();
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+}
+function addDaysStr(days) {
+  const d = new Date();
+  d.setDate(d.getDate() + days);
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+}
+function daysUntil(dateStr) {
+  const a = new Date(`${todayStr()}T00:00:00`).getTime();
+  const b = new Date(`${dateStr}T00:00:00`).getTime();
+  return Math.round((b - a) / 86400000);
+}
+function nowIso() { return new Date().toISOString(); }
+function esc(s) {
+  return String(s ?? "").replace(/[&<>"']/g, c => ({ "&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;" }[c]));
+}
+function checksum(obj) {
+  const str = JSON.stringify(obj);
+  let h1 = 0x811c9dc5, h2 = 0x01000193;
+  for (let i = 0; i < str.length; i++) {
+    const ch = str.charCodeAt(i);
+    h1 = Math.imul(h1 ^ ch, 0x01000193);
+    h2 = Math.imul(h2 ^ ch, 0x27d4eb2d);
+  }
+  return ((h1 >>> 0).toString(16).padStart(8, "0") + (h2 >>> 0).toString(16).padStart(8, "0")).toUpperCase();
+}
+
+let toastTimer = null;
+function toast(msg) {
+  const el = document.getElementById("toast");
+  el.textContent = msg;
+  el.classList.add("show");
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => el.classList.remove("show"), 2600);
+}
+
+function defaultDb() {
+  return {
+    shop: { name: "SSEDDUME DRUG SHOP MANAGEMENT SYSTEM", nda: "", lg: "", currency: "UGX" },
+    staff: [
+      { id: "U-OWNER", name: "Owner", role: "Owner", regNo: "OWNER", active: true },
+      { id: "U-MGR", name: "In-Charge", role: "In-Charge", regNo: "NDA-IC-01", active: true },
+      { id: "U-DISP", name: "Counter Dispenser", role: "Dispenser", regNo: "NDA-DSP-01", active: true }
+    ],
+    medicines: [],
+    batches: [],
+    sales: [],
+    credits: [],
+    tempLogs: [],
+    audit: []
+  };
+}
+
+function loadDb() {
+  try {
+    const raw = localStorage.getItem(STORAGE_KEY);
+    if (!raw) return defaultDb();
+    const p = JSON.parse(raw);
+    const d = defaultDb();
+    return {
+      ...d,
+      ...p,
+      shop: { ...d.shop, ...(p.shop || {}) },
+      staff: Array.isArray(p.staff) && p.staff.length ? p.staff : d.staff,
+      medicines: Array.isArray(p.medicines) ? p.medicines : [],
+      batches: Array.isArray(p.batches) ? p.batches : [],
+      sales: Array.isArray(p.sales) ? p.sales : [],
+      credits: Array.isArray(p.credits) ? p.credits : [],
+      tempLogs: Array.isArray(p.tempLogs) ? p.tempLogs : [],
+      audit: Array.isArray(p.audit) ? p.audit : []
+    };
+  } catch (_) {
+    return defaultDb();
+  }
+}
+
+let db = loadDb();
+let currentOperator = db.staff[0];
+let activeTab = "sell";
+let basket = [];
+
+function addAudit(action, detail) {
+  db.audit.unshift({
+    time: nowIso(),
+    user: currentOperator ? `${currentOperator.name} (${currentOperator.role})` : "Windows Station",
+    action,
+    detail
+  });
+}
+
+function saveDb() {
+  localStorage.setItem(STORAGE_KEY, JSON.stringify(db));
+  localStorage.setItem(SNAP_KEY, JSON.stringify({ savedAt: nowIso(), chk: checksum(db), data: db }));
+  renderTopbar();
+}
+
+function renderTopbar() {
+  document.getElementById("hdrTitle").textContent = db.shop.name || "SSEDDUME DRUG SHOP MANAGEMENT SYSTEM";
+  document.getElementById("hdrSub").textContent = `NDA: ${db.shop.nda || "N/A"} • LG: ${db.shop.lg || "N/A"} • Windows Desktop`;
+  document.getElementById("hdrUser").textContent = `${currentOperator.name} (${currentOperator.role})`;
+
+  const sel = document.getElementById("operatorSelect");
+  sel.innerHTML = db.staff.filter(s => s.active !== false).map(s =>
+    `<option value="${esc(s.id)}" ${s.id === currentOperator.id ? "selected" : ""}>${esc(s.name)} — ${esc(s.role)}</option>`
+  ).join("");
+}
+
+function changeOperator() {
+  const id = document.getElementById("operatorSelect").value;
+  const found = db.staff.find(s => s.id === id);
+  if (found) {
+    currentOperator = found;
+    addAudit("SWITCH_USER", `Switched active operator to ${found.name} (${found.role})`);
+    saveDb();
+    render();
+    toast(`Active operator: ${found.name}`);
+  }
+}
+
+function switchTab(tab) {
+  activeTab = tab;
+  document.querySelectorAll(".nav-item").forEach(btn => {
+    btn.classList.toggle("active", btn.dataset.tab === tab);
+  });
+  render();
+}
+
+function batchState(b) {
+  if (b.quarantined) return "QUARANTINED";
+  if (b.expiry <= todayStr()) return "EXPIRED";
+  if (b.qty <= 0) return "DEPLETED";
+  return "ACTIVE";
+}
+function isNearExpiry(b) { return batchState(b) === "ACTIVE" && b.expiry <= addDaysStr(30); }
+function isCritExpiry(b) { return batchState(b) === "ACTIVE" && b.expiry <= addDaysStr(7); }
+function availQty(medId) {
+  return db.batches.filter(b => b.medId === medId && batchState(b) === "ACTIVE").reduce((s, b) => s + b.qty, 0);
+}
+function openCreditTotal() {
+  return money(db.credits.filter(c => !c.settled).reduce((s, c) => s + money(c.balance), 0));
+}
+
+function renderAlerts() {
+  const html = [];
+  const crit = db.batches.filter(isCritExpiry);
+  if (crit.length) html.push(`<div class="alert alert-bad"><strong>Critical Expiry (≤ 7 days):</strong> ${crit.length} active batch(es) expire within 7 days. Dispense via FEFO first or quarantine.</div>`);
+  const low = db.medicines.filter(m => m.nda_schedule !== "RESTRICTED" && availQty(m.id) <= (m.reorder_level || 0));
+  if (low.length) html.push(`<div class="alert alert-warn"><strong>Low Stock Reorder:</strong> ${low.length} medicine(s) at or below reorder threshold (${low.slice(0, 5).map(m => esc(m.generic_name)).join(", ")}).</div>`);
+  return html.join("");
+}
+
+function renderKpis() {
+  const okSales = db.sales.filter(s => !s.voided);
+  const cash = money(okSales.reduce((a, b) => a + money(b.cashPaid ?? (b.payMethod === "CASH" ? b.total : 0)), 0));
+  const mm = money(okSales.reduce((a, b) => a + money(b.mmPaid ?? (b.payMethod === "MOBILE_MONEY" ? b.total : 0)), 0));
+  const cr = openCreditTotal();
+  const exp30 = db.batches.filter(isNearExpiry).length;
+  return `
+    <div class="kpis">
+      <div class="kpi"><div class="kpi-lbl">Cash Collected</div><div class="kpi-val">${cash.toFixed(2)}</div></div>
+      <div class="kpi"><div class="kpi-lbl">Mobile Money</div><div class="kpi-val">${mm.toFixed(2)}</div></div>
+      <div class="kpi"><div class="kpi-lbl">Open Credit</div><div class="kpi-val" style="color:${cr > 0 ? "var(--accent)" : "inherit"};">${cr.toFixed(2)}</div></div>
+      <div class="kpi"><div class="kpi-lbl">Expiring ≤ 30d</div><div class="kpi-val" style="color:${exp30 ? "var(--warn)" : "inherit"};">${exp30}</div></div>
+    </div>
+  `;
+}
+
+function render() {
+  const el = document.getElementById("mainView");
+  if (activeTab === "sell") return renderSell(el);
+  if (activeTab === "grn") return renderGrn(el);
+  if (activeTab === "meds") return renderMeds(el);
+  if (activeTab === "reports") return renderReports(el);
+  if (activeTab === "admin") return renderAdmin(el);
+}
+
+function renderSell(el) {
+  const usable = db.medicines.filter(m => m.nda_schedule !== "RESTRICTED");
+  const opts = usable.map(m => {
+    const a = availQty(m.id);
+    const priceTag = Number(m.default_unit_price) > 0 ? ` @${money(m.default_unit_price)}` : "";
+    const lowTag = a <= (m.reorder_level || 0) ? " [LOW]" : "";
+    const nearB = db.batches.filter(b => b.medId === m.id && isNearExpiry(b)).sort((x, y) => x.expiry.localeCompare(y.expiry))[0];
+    const expTag = nearB ? ` [EXP ${daysUntil(nearB.expiry)}d]` : "";
+    return `<option value="${esc(m.id)}">${esc(m.generic_name)} ${esc(m.strength)} — ${a} ${esc(m.base_unit)}${priceTag}${lowTag}${expTag}</option>`;
+  }).join("");
+
+  const basketHtml = basket.length ? basket.map((it, i) => `
+    <div style="display:flex;justify-content:space-between;align-items:center;padding:8px 10px;border:1px solid var(--border);border-radius:8px;background:var(--surface-2);margin-bottom:6px;">
+      <div><strong>${esc(it.medName)}</strong> &times; ${it.qty} ${esc(it.baseUnit)} @ ${money(it.unitPrice).toFixed(2)}${it.dosage ? `<div style="font-size:12px;color:var(--muted);">Sig: ${esc(it.dosage)}</div>` : ""}</div>
+      <div class="row" style="margin:0;"><strong>${money(it.qty * it.unitPrice).toFixed(2)}</strong><button class="ghost" onclick="delBasket(${i})">✕</button></div>
+    </div>
+  `).join("") : `<p style="color:var(--muted);font-size:13px;">Basket is empty. Add single units or full courses via FEFO.</p>`;
+
+  const total = money(basket.reduce((s, it) => s + money(it.qty * it.unitPrice), 0));
+
+  const salesRows = db.sales.slice(0, 25).map(s => `
+    <tr>
+      <td>${esc(s.time.slice(0, 16).replace("T", " "))}</td>
+      <td><button class="ghost" onclick="viewReceipt('${esc(s.receiptId || s.id)}')">${esc(s.receiptId || s.id)}</button> <strong>${esc(s.medName)}</strong>${s.dosage ? `<br><small style="color:var(--muted);">Sig: ${esc(s.dosage)}</small>` : ""}</td>
+      <td>${esc(s.batchNo)}</td>
+      <td>${s.qty}</td>
+      <td>${money(s.total).toFixed(2)} <span class="badge ok">${esc(s.payMethod)}</span></td>
+      <td>${esc(s.dispenser)}</td>
+      <td>${s.voided ? '<span class="badge bad">VOIDED</span>' : `<button class="danger" style="min-height:28px;padding:3px 8px;font-size:11.5px;" onclick="voidSale('${esc(s.id)}')">Void</button>`}</td>
+    </tr>
+  `).join("") || `<tr><td colspan="7" style="color:var(--muted);">No sales recorded yet.</td></tr>`;
+
+  el.innerHTML = `
+    ${renderKpis()}
+    ${renderAlerts()}
+    <div class="grid-2">
+      <div class="card">
+        <h3>Dispense Line (Strict FEFO)</h3>
+        <div class="row">
+          <input id="sSearch" type="text" placeholder="Search generic, brand, or barcode..." oninput="filterSell()" style="flex:1;min-width:200px;" />
+          <select id="sMed" onchange="onSelectSellMed()" style="flex:1.4;min-width:240px;">${opts || '<option value="">No stock available</option>'}</select>
+        </div>
+        <div id="sMedNote"></div>
+        <div class="row">
+          <input id="sQty" type="number" min="1" value="1" oninput="updateSellNote()" style="width:90px;" />
+          <button class="ghost" onclick="bump('sQty', 1)">+1</button>
+          <button class="ghost" onclick="bump('sQty', 5)">+5</button>
+          <button class="ghost" onclick="bump('sQty', 10)">+10</button>
+          <input id="sPrice" type="number" min="0" step="0.01" placeholder="Unit Price" style="width:125px;" />
+          <input id="sDosage" type="text" placeholder="Dosage / course instruction" style="flex:1;min-width:170px;" />
+          <button class="secondary" onclick="addBasket()">+ Add</button>
+        </div>
+      </div>
+
+      <div class="card">
+        <h3>Receipt Basket (${basket.length})</h3>
+        ${basketHtml}
+        <div class="row" style="justify-content:space-between;border-top:1px solid var(--border);padding-top:10px;margin-top:8px;">
+          <strong style="font-size:16px;">Total: ${total.toFixed(2)}</strong>
+          <select id="sPay" onchange="renderPayExtra()">
+            <option value="CASH">CASH</option>
+            <option value="MOBILE_MONEY">MOBILE_MONEY</option>
+            <option value="SPLIT">SPLIT (Cash + MM)</option>
+            <option value="CREDIT">CREDIT</option>
+          </select>
+        </div>
+        <div class="row" id="payExtra"></div>
+        <button class="primary" onclick="checkout()" style="width:100%;">Complete Sale &amp; Receipt</button>
+      </div>
+    </div>
+
+    <div class="card">
+      <h3>Recent Dispensing Register</h3>
+      <div class="table-wrap">
+        <table><thead><tr><th>Time</th><th>Receipt &amp; Item</th><th>Batch</th><th>Qty</th><th>Total</th><th>Dispenser</th><th>Action</th></tr></thead><tbody>${salesRows}</tbody></table>
+      </div>
+    </div>
+  `;
+  onSelectSellMed();
+}
+
+function bump(id, d) {
+  const inp = document.getElementById(id);
+  if (!inp) return;
+  inp.value = Math.max(1, (parseInt(inp.value || "0", 10) || 0) + d);
+  updateSellNote();
+}
+function onSelectSellMed() {
+  const m = db.medicines.find(x => x.id === document.getElementById("sMed")?.value);
+  const p = document.getElementById("sPrice");
+  if (m && p && Number(m.default_unit_price) > 0) p.value = money(m.default_unit_price);
+  updateSellNote();
+}
+function updateSellNote() {
+  const box = document.getElementById("sMedNote");
+  const m = db.medicines.find(x => x.id === document.getElementById("sMed")?.value);
+  if (!box || !m) return;
+  const q = Math.max(1, parseInt(document.getElementById("sQty")?.value || "1", 10) || 1);
+  const packTxt = m.pack_name && m.pack_multiplier > 1 ? ` • ${q} ${esc(m.base_unit)} = ${(q / m.pack_multiplier).toFixed(2)} ${esc(m.pack_name)}` : "";
+  const caution = m.clinical_note ? `<div class="alert alert-info" style="margin:6px 0 8px;padding:7px 10px;"><strong>Caution:</strong> ${esc(m.clinical_note)}</div>` : "";
+  box.innerHTML = `<div style="font-size:12px;color:var(--muted);margin-bottom:6px;">Available: <b>${availQty(m.id)} ${esc(m.base_unit)}</b>${packTxt}</div>${caution}`;
+}
+function filterSell() {
+  const q = (document.getElementById("sSearch")?.value || "").trim().toLowerCase();
+  const sel = document.getElementById("sMed");
+  const list = db.medicines.filter(m => m.nda_schedule !== "RESTRICTED" && (!q || m.generic_name.toLowerCase().includes(q) || (m.brand_name || "").toLowerCase().includes(q) || (m.barcode || "").toLowerCase().includes(q)));
+  sel.innerHTML = list.map(m => `<option value="${esc(m.id)}">${esc(m.generic_name)} ${esc(m.strength)} — ${availQty(m.id)} ${esc(m.base_unit)}</option>`).join("") || '<option value="">No match</option>';
+  onSelectSellMed();
+}
+function renderPayExtra() {
+  const m = document.getElementById("sPay")?.value || "CASH";
+  const box = document.getElementById("payExtra");
+  if (!box) return;
+  if (m === "SPLIT") box.innerHTML = `<input id="spCash" type="number" step="0.01" placeholder="Cash" style="width:110px;" /><input id="spMm" type="number" step="0.01" placeholder="MM" style="width:110px;" /><input id="spRef" type="text" placeholder="MM Ref" style="width:130px;" />`;
+  else if (m === "MOBILE_MONEY") box.innerHTML = `<input id="spRef" type="text" placeholder="MM Ref / Phone" style="width:160px;" />`;
+  else if (m === "CREDIT") box.innerHTML = `<input id="crCust" type="text" placeholder="Customer Name & Phone" style="width:180px;" /><input id="crDep" type="number" step="0.01" placeholder="Deposit" style="width:110px;" />`;
+  else box.innerHTML = "";
+}
+function addBasket() {
+  const med = db.medicines.find(x => x.id === document.getElementById("sMed")?.value);
+  const qty = parseInt(document.getElementById("sQty")?.value || "0", 10);
+  const unitPrice = money(parseFloat(document.getElementById("sPrice")?.value || "0"));
+  const dosage = (document.getElementById("sDosage")?.value || "").trim();
+  if (!med || med.nda_schedule === "RESTRICTED") return alert("Select a permitted medicine.");
+  if (!Number.isInteger(qty) || qty <= 0) return alert("Enter valid quantity.");
+  const inB = basket.filter(x => x.medId === med.id).reduce((s, x) => s + x.qty, 0);
+  if (qty + inB > availQty(med.id)) return alert(`Only ${availQty(med.id)} ${med.base_unit} available.`);
+  basket.push({ medId: med.id, medName: `${med.generic_name}${med.strength ? " (" + med.strength + ")" : ""}`, baseUnit: med.base_unit, qty, unitPrice, dosage });
+  render();
+  toast("Added to basket");
+}
+function delBasket(i) { basket.splice(i, 1); render(); }
+function checkout() {
+  if (!basket.length) return alert("Basket is empty.");
+  const grand = money(basket.reduce((s, x) => s + money(x.qty * x.unitPrice), 0));
+  const payMethod = document.getElementById("sPay")?.value || "CASH";
+  const payRef = (document.getElementById("spRef")?.value || "").trim();
+  let cashPaid = 0, mmPaid = 0, crCust = "", crBal = 0;
+  if (payMethod === "CASH") cashPaid = grand;
+  else if (payMethod === "MOBILE_MONEY") mmPaid = grand;
+  else if (payMethod === "SPLIT") {
+    cashPaid = money(parseFloat(document.getElementById("spCash")?.value || "0"));
+    mmPaid = money(parseFloat(document.getElementById("spMm")?.value || "0"));
+    if (Math.abs(money(cashPaid + mmPaid) - grand) >= 0.01) return alert("Split parts must equal total.");
+  } else if (payMethod === "CREDIT") {
+    crCust = (document.getElementById("crCust")?.value || "").trim();
+    const dep = money(parseFloat(document.getElementById("crDep")?.value || "0"));
+    if (!crCust) return alert("Enter customer name.");
+    if (dep < 0 || dep >= grand) return alert("Deposit must be >= 0 and < total.");
+    cashPaid = dep;
+    crBal = money(grand - dep);
+  }
+  const rcpId = "RCP-" + Date.now();
+  let remC = cashPaid, remM = mmPaid;
+  for (const it of basket) {
+    let rem = it.qty;
+    const batches = db.batches.filter(b => b.medId === it.medId && batchState(b) === "ACTIVE").sort((a, b) => a.expiry.localeCompare(b.expiry));
+    for (const b of batches) {
+      if (rem <= 0) break;
+      const take = Math.min(b.qty, rem);
+      b.qty -= take;
+      rem -= take;
+      const lTot = money(take * it.unitPrice);
+      const ratio = grand > 0 ? lTot / grand : 0;
+      const lc = money(cashPaid * ratio);
+      const lm = money(mmPaid * ratio);
+      remC = money(remC - lc); remM = money(remM - lm);
+      db.sales.unshift({
+        id: "S-" + Date.now() + "-" + Math.random().toString(36).slice(2, 6),
+        receiptId: rcpId, time: nowIso(), medId: it.medId, medName: it.medName,
+        batchId: b.id, batchNo: b.batchNo, qty: take, unitPrice: it.unitPrice, total: lTot,
+        payMethod, cashPaid: lc, mmPaid: lm, payRef: payRef || (crCust ? `Credit: ${crCust}` : ""),
+        dosage: it.dosage, dispenser: currentOperator.name, voided: false
+      });
+    }
+    addAudit("SALE", `[${rcpId}] Dispensed ${it.qty} ${it.baseUnit} ${it.medName} (${payMethod})`);
+  }
+  if (payMethod === "CREDIT" && crBal > 0) {
+    db.credits.unshift({ id: "CRD-" + Date.now(), receiptId: rcpId, time: nowIso(), customer: crCust, total: grand, paid: cashPaid, balance: crBal, settled: false });
+  }
+  basket = [];
+  saveDb();
+  render();
+  viewReceipt(rcpId);
+}
+function voidSale(id) {
+  const s = db.sales.find(x => x.id === id);
+  if (!s || s.voided) return;
+  const reason = (prompt("Reason for void:") || "").trim();
+  if (!reason) return alert("Reason required.");
+  s.voided = true; s.cashPaid = 0; s.mmPaid = 0;
+  const b = db.batches.find(x => x.id === s.batchId);
+  if (b) b.qty += s.qty;
+  addAudit("VOID", `Voided ${s.id} (+${s.qty} to ${s.batchNo}) — ${reason}`);
+  saveDb(); render();
+}
+function viewReceipt(key) {
+  const lines = db.sales.filter(s => (s.receiptId || s.id) === key);
+  if (!lines.length) return;
+  const first = lines[0];
+  const tot = money(lines.filter(l => !l.voided).reduce((a, b) => a + money(b.total), 0));
+  document.getElementById("receiptBox").innerHTML = `
+    <h3>${esc(db.shop.name)}</h3>
+    <div style="font-size:12px;color:var(--muted);margin-bottom:10px;">Receipt: <b>${esc(key)}</b> • ${esc(first.time.slice(0, 16).replace("T", " "))} • ${esc(first.dispenser)}</div>
+    <table style="margin-bottom:10px;"><thead><tr><th>Item</th><th>Qty</th><th>Total</th></tr></thead><tbody>${lines.map(l => `<tr><td>${esc(l.medName)} (${esc(l.batchNo)})${l.dosage ? `<br><small>${esc(l.dosage)}</small>` : ""}</td><td>${l.qty}</td><td>${money(l.total).toFixed(2)}${l.voided ? " (VOID)" : ""}</td></tr>`).join("")}</tbody></table>
+    <div style="display:flex;justify-content:space-between;font-weight:700;margin-bottom:12px;"><span>Total (${esc(first.payMethod)})</span><span>${tot.toFixed(2)}</span></div>
+    <div class="row no-print" style="justify-content:flex-end;margin:0;"><button class="ghost" onclick="window.print()">Print</button><button class="primary" onclick="document.getElementById('receiptModal').style.display='none'">Close</button></div>
+  `;
+  document.getElementById("receiptModal").style.display = "flex";
+}
+
+function renderGrn(el) {
+  const opts = db.medicines.map(m => `<option value="${esc(m.id)}">${esc(m.generic_name)} ${esc(m.strength)} (${esc(m.base_unit)})</option>`).join("");
+  const rows = db.batches.map(b => {
+    const m = db.medicines.find(x => x.id === b.medId);
+    const st = batchState(b);
+    return `<tr><td>${esc(m ? m.generic_name : b.medId)}</td><td>${esc(b.batchNo)}</td><td>${esc(b.wholesaler)} / ${esc(b.invoiceNo)}</td><td>${esc(b.expiry)}</td><td>${b.qty}</td><td><span class="badge ${st === "ACTIVE" ? "ok" : "bad"}">${st}</span></td><td><button class="ghost" onclick="toggleQ('${esc(b.id)}')">${b.quarantined ? "Release" : "Quarantine"}</button></td></tr>`;
+  }).join("");
+  el.innerHTML = `
+    ${renderAlerts()}
+    <div class="card">
+      <h3>Goods Received Note (GRN)</h3>
+      <div class="row">
+        <select id="gMed" style="flex:1;min-width:220px;">${opts || '<option value="">Add a medicine first</option>'}</select>
+        <input id="gWho" type="text" placeholder="Wholesaler & NDA Licence *" style="flex:1;min-width:200px;" />
+        <input id="gInv" type="text" placeholder="Invoice No. *" style="width:140px;" />
+      </div>
+      <div class="row">
+        <input id="gBat" type="text" placeholder="Batch No. *" style="width:150px;" />
+        <input id="gExp" type="date" />
+        <input id="gQty" type="number" min="1" placeholder="Qty *" style="width:100px;" />
+        <button class="primary" onclick="saveGrn()">Receive Stock</button>
+      </div>
+    </div>
+    <div class="card"><h3>Batches</h3><div class="table-wrap"><table><thead><tr><th>Medicine</th><th>Batch</th><th>Supplier / Inv</th><th>Expiry</th><th>Qty</th><th>State</th><th>Action</th></tr></thead><tbody>${rows}</tbody></table></div></div>
+  `;
+}
+function saveGrn() {
+  const medId = document.getElementById("gMed").value;
+  const wholesaler = document.getElementById("gWho").value.trim();
+  const invoiceNo = document.getElementById("gInv").value.trim();
+  const batchNo = document.getElementById("gBat").value.trim();
+  const expiry = document.getElementById("gExp").value;
+  const qty = parseInt(document.getElementById("gQty").value || "0", 10);
+  if (!medId || !wholesaler || !invoiceNo || !batchNo || !expiry || qty <= 0) return alert("Complete all GRN fields.");
+  if (expiry <= todayStr()) return alert("Expired stock cannot be received.");
+  db.batches.push({ id: "B-" + Date.now(), medId, wholesaler, invoiceNo, batchNo, expiry, qty, quarantined: false });
+  addAudit("GRN", `Received ${qty} batch ${batchNo} (${wholesaler})`);
+  saveDb(); render(); toast("Stock received");
+}
+function toggleQ(id) {
+  const b = db.batches.find(x => x.id === id);
+  if (!b) return;
+  b.quarantined = !b.quarantined;
+  addAudit("QUARANTINE", `Batch ${b.batchNo} quarantined=${b.quarantined}`);
+  saveDb(); render();
+}
+
+function renderMeds(el) {
+  const rows = db.medicines.map(m => `<tr><td><strong>${esc(m.generic_name)}</strong></td><td>${esc(m.brand_name)}</td><td>${esc(m.strength)}</td><td>${money(m.default_unit_price).toFixed(2)}</td><td>${availQty(m.id)} ${esc(m.base_unit)}</td><td><span class="badge ${m.nda_schedule === "RESTRICTED" ? "bad" : "ok"}">${esc(m.nda_schedule)}</span></td></tr>`).join("");
+  el.innerHTML = `
+    <div class="card">
+      <h3>Add Medicine</h3>
+      <div class="row">
+        <input id="mGen" type="text" placeholder="Generic Name *" style="flex:1;min-width:160px;" />
+        <input id="mBrand" type="text" placeholder="Brand" style="width:140px;" />
+        <input id="mStr" type="text" placeholder="Strength" style="width:120px;" />
+        <input id="mUnit" type="text" value="TABLET" placeholder="Unit" style="width:110px;" />
+        <input id="mPrice" type="number" step="0.01" placeholder="Price" style="width:110px;" />
+        <select id="mSched"><option value="CLASS_C">CLASS_C</option><option value="RESTRICTED">RESTRICTED</option></select>
+        <button class="primary" onclick="addMed()">Save</button>
+      </div>
+    </div>
+    <div class="card"><h3>Catalogue (${db.medicines.length})</h3><div class="table-wrap"><table><thead><tr><th>Generic</th><th>Brand</th><th>Strength</th><th>Price</th><th>Stock</th><th>Schedule</th></tr></thead><tbody>${rows}</tbody></table></div></div>
+  `;
+}
+function addMed() {
+  const generic_name = document.getElementById("mGen").value.trim();
+  if (!generic_name) return alert("Generic name required.");
+  db.medicines.push({
+    id: "M-" + Date.now(),
+    generic_name,
+    brand_name: document.getElementById("mBrand").value.trim(),
+    strength: document.getElementById("mStr").value.trim(),
+    base_unit: (document.getElementById("mUnit").value || "TABLET").trim().toUpperCase(),
+    default_unit_price: money(parseFloat(document.getElementById("mPrice").value || "0")),
+    reorder_level: 10,
+    nda_schedule: document.getElementById("mSched").value
+  });
+  addAudit("ADD_MED", `Added ${generic_name}`);
+  saveDb(); render(); toast("Medicine saved");
+}
+
+function renderReports(el) {
+  const crRows = db.credits.filter(c => !c.settled).map(c => `<tr><td>${esc(c.customer)}</td><td>${esc(c.receiptId)}</td><td>${money(c.balance).toFixed(2)}</td><td><button class="primary" onclick="payCr('${esc(c.id)}')">Settle</button></td></tr>`).join("") || `<tr><td colspan="4" style="color:var(--muted);">No open credits.</td></tr>`;
+  const auRows = db.audit.slice(0, 30).map(a => `<tr><td>${esc(a.time.slice(0, 16).replace("T", " "))}</td><td>${esc(a.user)}</td><td>${esc(a.action)}</td><td>${esc(a.detail)}</td></tr>`).join("");
+  el.innerHTML = `
+    ${renderKpis()}
+    <div class="card"><h3>Open Customer Credits</h3><div class="table-wrap"><table><thead><tr><th>Customer</th><th>Receipt</th><th>Balance</th><th>Action</th></tr></thead><tbody>${crRows}</tbody></table></div></div>
+    <div class="card"><h3>Audit Trail</h3><div class="table-wrap"><table><thead><tr><th>Time</th><th>User</th><th>Action</th><th>Detail</th></tr></thead><tbody>${auRows}</tbody></table></div></div>
+  `;
+}
+function payCr(id) {
+  const c = db.credits.find(x => x.id === id);
+  if (!c) return;
+  const amt = money(parseFloat(prompt(`Balance: ${money(c.balance).toFixed(2)}. Enter payment:`) || "0"));
+  if (!(amt > 0 && amt <= money(c.balance))) return alert("Invalid amount.");
+  c.balance = money(c.balance - amt);
+  if (c.balance <= 0) c.settled = true;
+  addAudit("CREDIT_PAY", `Paid ${amt.toFixed(2)} on ${c.receiptId}`);
+  saveDb(); render();
+}
+
+function renderAdmin(el) {
+  el.innerHTML = `
+    <div class="card">
+      <h3>Shop &amp; Licence Details</h3>
+      <div class="row">
+        <input id="aName" type="text" value="${esc(db.shop.name)}" style="flex:1;min-width:220px;" />
+        <input id="aNda" type="text" value="${esc(db.shop.nda)}" placeholder="NDA Licence" />
+        <input id="aLg" type="text" value="${esc(db.shop.lg)}" placeholder="Local Gov Licence" />
+        <button class="primary" onclick="saveShop()">Save</button>
+      </div>
+    </div>
+    <div class="card">
+      <h3>Cold-Storage Transfer &amp; Backup</h3>
+      <p style="font-size:13px;color:var(--muted);">Export a checksum-verified JSON bundle to USB / cold storage, or import a bundle from a tablet/PC to load records.</p>
+      <div class="row">
+        <button class="accent" onclick="exportBundleJson()">Download Verified JSON Bundle</button>
+        <label class="ghost" style="display:inline-flex;align-items:center;margin:0;">Select JSON Bundle to Load <input type="file" accept="application/json,.json" onchange="importBundleJson(event)" style="display:none;" /></label>
+      </div>
+    </div>
+  `;
+}
+function saveShop() {
+  db.shop.name = document.getElementById("aName").value.trim() || "SSEDDUME DRUG SHOP MANAGEMENT SYSTEM";
+  db.shop.nda = document.getElementById("aNda").value.trim();
+  db.shop.lg = document.getElementById("aLg").value.trim();
+  addAudit("SHOP_CFG", "Updated shop details");
+  saveDb(); render(); toast("Saved");
+}
+
+function exportBundleJson() {
+  const snap = JSON.parse(JSON.stringify(db));
+  const pkg = { system: "SSEDDUME DRUG SHOP MANAGEMENT SYSTEM", exportedAt: nowIso(), checksum: checksum(snap), data: snap };
+  const blob = new Blob([JSON.stringify(pkg, null, 2)], { type: "application/json" });
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(blob);
+  a.download = `sseddume-windows-bundle-${todayStr()}.json`;
+  a.click();
+  toast("Bundle exported");
+}
+async function importBundleJson(ev) {
+  const f = ev.target.files?.[0];
+  ev.target.value = "";
+  if (!f) return;
+  try {
+    const raw = JSON.parse(await f.text());
+    const payload = raw?.snapshot && typeof raw.snapshot === "object" ? raw.snapshot : (raw?.data && typeof raw.data === "object" ? raw.data : raw);
+    if (raw?.checksum && checksum(payload) !== raw.checksum) return alert("Checksum mismatch — file corrupted.");
+    if (!Array.isArray(payload.medicines) || !Array.isArray(payload.batches) || !Array.isArray(payload.sales)) return alert("Invalid bundle format.");
+    const base = defaultDb();
+    db = { ...base, ...payload, shop: { ...base.shop, ...(payload.shop || {}) } };
+    currentOperator = db.staff[0] || base.staff[0];
+    addAudit("IMPORT_BUNDLE", `Imported bundle ${f.name}`);
+    saveDb(); render(); toast("Bundle loaded");
+  } catch (err) {
+    alert("Import error: " + (err?.message || err));
+  }
+}
+
+renderTopbar();
+render();
+</script>
+</body>
+</html>
