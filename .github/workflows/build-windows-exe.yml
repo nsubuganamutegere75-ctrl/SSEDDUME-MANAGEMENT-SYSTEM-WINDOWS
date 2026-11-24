@@ -11,10 +11,10 @@ jobs:
 
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v5
+        uses: actions/checkout@v4
 
       - name: Setup .NET 8 SDK
-        uses: actions/setup-dotnet@v5
+        uses: actions/setup-dotnet@v4
         with:
           dotnet-version: '8.0.x'
 
@@ -51,11 +51,11 @@ jobs:
           New-Item -ItemType Directory -Force -Path "release-pack" | Out-Null
           Copy-Item "dist/windows/SseddumeDrugShop.exe" "release-pack/SseddumeDrugShop.exe" -Force
           @"
-          SSEDDUME DRUG SHOP MANAGEMENT SYSTEM - WINDOWS EXECUTABLE
-          =========================================================
+          SSEDDUME DRUG SHOP MANAGEMENT SYSTEM - WINDOWS COMPANION EXECUTABLE
+          ===================================================================
           1. Double-click SseddumeDrugShop.exe to run on Windows 10/11 (x64).
-          2. Data is stored locally in %LocalAppData%\SseddumeDrugShop\WebView2Data.
-          3. Use "Export Bundle" inside the app to save a verified JSON backup for USB/cold storage.
+          2. Open "Link Phone QR & Sync" inside the app to scan the QR code from your Android phone/tablet over shop Wi-Fi.
+          3. Data is stored locally in %LocalAppData%\SseddumeDrugShop\WebView2Data.
           "@ | Out-File -FilePath "release-pack/README.txt" -Encoding utf8
 
       - name: Upload Windows EXE Artifact
