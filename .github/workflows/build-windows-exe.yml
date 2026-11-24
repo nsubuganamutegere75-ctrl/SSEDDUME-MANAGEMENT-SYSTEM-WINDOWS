@@ -1,0 +1,66 @@
+name: Build Windows Desktop EXE
+
+on:
+  push:
+    branches: [ main, master ]
+  workflow_dispatch:
+
+jobs:
+  build-windows:
+    runs-on: windows-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup .NET 8 SDK
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '8.0.x'
+
+      - name: Prepare project files
+        shell: pwsh
+        run: |
+          if (Test-Path "gemini-code-1795529702295.xml") {
+            Copy-Item "gemini-code-1795529702295.xml" "SseddumeDrugShop.csproj" -Force
+          }
+          if (-not (Test-Path "SseddumeDrugShop.csproj")) {
+            throw "Project file SseddumeDrugShop.csproj not found."
+          }
+          if (-not (Test-Path "Program.cs")) {
+            throw "Program.cs not found."
+          }
+          if (-not (Test-Path "app.html")) {
+            throw "app.html not found."
+          }
+
+      - name: Publish single-file Windows EXE
+        run: >
+          dotnet publish SseddumeDrugShop.csproj
+          -c Release
+          -r win-x64
+          --self-contained true
+          -p:PublishSingleFile=true
+          -p:IncludeNativeLibrariesForSelfExtract=true
+          -p:EnableCompressionInSingleFile=true
+          -o dist/windows
+
+      - name: Package cold-storage release folder
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force -Path "release-pack" | Out-Null
+          Copy-Item "dist/windows/SseddumeDrugShop.exe" "release-pack/SseddumeDrugShop.exe" -Force
+          @"
+          SSEDDUME DRUG SHOP MANAGEMENT SYSTEM - WINDOWS EXECUTABLE
+          =========================================================
+          1. Double-click SseddumeDrugShop.exe to run on Windows 10/11 (x64).
+          2. Data is stored locally in %LocalAppData%\SseddumeDrugShop\WebView2Data.
+          3. Use "Export Bundle" inside the app to save a verified JSON backup for USB/cold storage.
+          "@ | Out-File -FilePath "release-pack/README.txt" -Encoding utf8
+
+      - name: Upload Windows EXE Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: sseddume-dsms-windows-exe
+          path: release-pack/
+          retention-days: 90
