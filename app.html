@@ -36,7 +36,11 @@
       position: sticky; top: 0; z-index: 30;
       box-shadow: 0 2px 10px rgba(15, 23, 42, 0.22);
     }
-    .win-brand { font-size: 16px; font-weight: 800; letter-spacing: 0.01em; }
+    .win-brand { font-size: 16px; font-weight: 800; letter-spacing: 0.01em; display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+    .branch-tag {
+      background: #14b8a6; color: #042f2e; font-size: 11px; font-weight: 800;
+      padding: 2px 9px; border-radius: 999px; letter-spacing: 0.03em;
+    }
     .win-sub { font-size: 12px; color: #cbd5e1; margin-top: 2px; }
     .pill {
       background: rgba(255,255,255,0.14); border: 1px solid rgba(255,255,255,0.24);
@@ -151,7 +155,10 @@
 <body>
   <div class="win-topbar">
     <div>
-      <div class="win-brand" id="hdrTitle">SSEDDUME DRUG SHOP MANAGEMENT SYSTEM</div>
+      <div class="win-brand">
+        <span id="hdrTitle">SSEDDUME DRUG SHOP MANAGEMENT SYSTEM</span>
+        <span class="branch-tag" id="hdrBranchTag">MAIN BRANCH (LOC-MAIN)</span>
+      </div>
       <div class="win-sub" id="hdrSub">Secure Terminal &amp; Mobile POS Synchronization Gateway</div>
     </div>
     <div class="row" style="margin:0;">
@@ -170,9 +177,9 @@
       <div style="font-size:11px;font-weight:700;color:var(--muted);text-transform:uppercase;padding:4px 8px 8px;">Workstation Modules</div>
       <button class="nav-item active" data-tab="sell" onclick="switchTab('sell')">💊 Dispensing &amp; POS</button>
       <button class="nav-item" data-tab="grn" onclick="switchTab('grn')">📦 Goods Received (FEFO)</button>
-      <button class="nav-item" data-tab="meds" onclick="switchTab('meds')">📋 Formulary &amp; Stock</button>
+      <button class="nav-item" data-tab="meds" onclick="switchTab('meds')">📋 Formulary &amp; CSV</button>
       <button class="nav-item" data-tab="reports" onclick="switchTab('reports')">📊 Ledger, Credit &amp; Audit</button>
-      <button class="nav-item" data-tab="admin" onclick="switchTab('admin')">🔐 Gateway &amp; Clearance</button>
+      <button class="nav-item" data-tab="admin" onclick="switchTab('admin')">🔐 Gateway, Branch &amp; Keys</button>
       <hr style="border:none;border-top:1px solid var(--border);margin:10px 4px;" />
       <div style="padding:4px 8px;font-size:12px;color:var(--muted);line-height:1.45;">
         Active Clearance:<br/>
@@ -191,16 +198,35 @@
   </div>
 
 <script>
-const STORAGE_KEY = "sseddume_gateway_db_v3";
-const SNAP_KEY = "sseddume_gateway_snap_v3";
-const CLOUD_CFG_KEY = "sseddume_gateway_cloud_cfg_v3";
-const DEV_ID_KEY = "sseddume_gateway_dev_id_v3";
+const BASE_STORAGE_KEY = "sseddume_gateway_db_v4";
+const BASE_SNAP_KEY = "sseddume_gateway_snap_v4";
+const CLOUD_CFG_KEY = "sseddume_gateway_cloud_cfg_v4";
+const DEV_ID_KEY = "sseddume_gateway_dev_id_v4";
 
 const ROLE_CAPS = {
-  Owner: ["dispense", "grn", "meds", "void_sale", "settle_credit", "reports", "audit_full", "admin", "pairing", "staff"],
-  "In-Charge": ["dispense", "grn", "meds", "void_sale", "settle_credit", "reports"],
+  Owner: ["dispense", "grn", "meds", "stock_adjust", "void_sale", "settle_credit", "reports", "audit_full", "admin", "pairing", "staff"],
+  "In-Charge": ["dispense", "grn", "meds", "stock_adjust", "void_sale", "settle_credit", "reports"],
   Dispenser: ["dispense"]
 };
+
+let gatewayInfo = {
+  host: "STATION",
+  branchCode: "LOC-MAIN",
+  branchName: "MAIN BRANCH",
+  lanIp: "127.0.0.1",
+  endpoint: "http://127.0.0.1:8080",
+  staffToken: "",
+  ownerToken: "",
+  staffQrPayload: "",
+  ownerQrPayload: ""
+};
+
+function storageKeyForBranch() {
+  return `${BASE_STORAGE_KEY}_${gatewayInfo.branchCode || "LOC-MAIN"}`;
+}
+function snapKeyForBranch() {
+  return `${BASE_SNAP_KEY}_${gatewayInfo.branchCode || "LOC-MAIN"}`;
+}
 
 function getDevId() {
   let id = localStorage.getItem(DEV_ID_KEY);
@@ -254,7 +280,6 @@ function toast(msg) {
 
 /* ==================== 100% OFFLINE ISO/IEC 18004 QR CODE ENGINE (VERSIONS 1-10, ECC-L) ==================== */
 const IsoQrEngine = (() => {
-  // Version specs for ECC Level L (1-10): [modulesPerSide, totalDataCodewords, ecCodewordsPerBlock, numBlocksGroup1, numBlocksGroup2, alignCenters]
   const SPECS = {
     1:  { n: 21,  data: 19,  ec: 7,  g1: 1, g2: 0, align: [] },
     2:  { n: 25,  data: 34,  ec: 10, g1: 1, g2: 0, align: [6, 18] },
@@ -268,19 +293,8 @@ const IsoQrEngine = (() => {
     10: { n: 57,  data: 274, ec: 18, g1: 2, g2: 2, align: [6, 28, 50] }
   };
 
-  // Format information bits for ECC L (01) and masks 0..7
-  const FORMAT_INFO = [
-    0x77c4, 0x72f3, 0x7daa, 0x789d,
-    0x662f, 0x6318, 0x6c41, 0x6976
-  ];
-
-  // Version information bits for Versions 7..10
-  const VERSION_INFO = {
-    7:  0x07c94,
-    8:  0x085bc,
-    9:  0x09a99,
-    10: 0x0a4d3
-  };
+  const FORMAT_INFO = [0x77c4, 0x72f3, 0x7daa, 0x789d, 0x662f, 0x6318, 0x6c41, 0x6976];
+  const VERSION_INFO = { 7: 0x07c94, 8: 0x085bc, 9: 0x09a99, 10: 0x0a4d3 };
 
   const GF_EXP = new Uint8Array(512);
   const GF_LOG = new Uint8Array(256);
@@ -317,9 +331,7 @@ const IsoQrEngine = (() => {
       ecc.copyWithin(0, 1);
       ecc[ecLen - 1] = 0;
       if (factor !== 0) {
-        for (let j = 0; j < ecLen; j++) {
-          ecc[j] ^= gfMul(gen[j + 1], factor);
-        }
+        for (let j = 0; j < ecLen; j++) ecc[j] ^= gfMul(gen[j + 1], factor);
       }
     }
     return ecc;
@@ -350,7 +362,6 @@ const IsoQrEngine = (() => {
 
   function penaltyScore(grid, n) {
     let score = 0;
-    // Rule 1: runs of 5+ same color in rows & cols
     for (let r = 0; r < n; r++) {
       let run = 1;
       for (let c = 1; c < n; c++) {
@@ -367,7 +378,6 @@ const IsoQrEngine = (() => {
       }
       if (run >= 5) score += 3 + (run - 5);
     }
-    // Rule 2: 2x2 blocks of same color
     for (let r = 0; r < n - 1; r++) {
       for (let c = 0; c < n - 1; c++) {
         const v = grid[r][c];
@@ -404,7 +414,6 @@ const IsoQrEngine = (() => {
     drawFinder(0, n - 7);
     drawFinder(n - 7, 0);
 
-    // Alignment patterns
     const centers = spec.align;
     for (let i = 0; i < centers.length; i++) {
       for (let j = 0; j < centers.length; j++) {
@@ -420,16 +429,13 @@ const IsoQrEngine = (() => {
       }
     }
 
-    // Timing patterns
     for (let i = 8; i < n - 8; i++) {
       setFunc(6, i, i % 2 === 0);
       setFunc(i, 6, i % 2 === 0);
     }
 
-    // Dark module
     setFunc(n - 8, 8, true);
 
-    // Reserve format info cells
     for (let i = 0; i < 9; i++) {
       if (i !== 6) {
         isFunc[8][i] = true;
@@ -441,7 +447,6 @@ const IsoQrEngine = (() => {
       isFunc[n - 1 - i][8] = true;
     }
 
-    // Reserve version info cells for Versions 7+
     if (ver >= 7) {
       for (let i = 0; i < 6; i++) {
         for (let j = 0; j < 3; j++) {
@@ -451,7 +456,6 @@ const IsoQrEngine = (() => {
       }
     }
 
-    // Place data & EC bits in upward/downward zig-zag columns
     let bitPos = 0;
     let goingUp = true;
     for (let col = n - 1; col >= 1; col -= 2) {
@@ -511,7 +515,6 @@ const IsoQrEngine = (() => {
       for (let i = len - 1; i >= 0; i--) bits.push((val >> i) & 1);
     };
 
-    // Byte mode indicator (0100) + character count + raw UTF-8 bytes
     pushBits(0b0100, 4);
     pushBits(bytes.length, ccBits);
     for (let i = 0; i < bytes.length; i++) pushBits(bytes[i], 8);
@@ -533,7 +536,6 @@ const IsoQrEngine = (() => {
       dataCodewords.push(padBytes[padIdx++ % 2]);
     }
 
-    // Split into blocks and compute Reed-Solomon ECC codewords
     const blocksData = [];
     const blocksEc = [];
     let cursor = 0;
@@ -548,7 +550,6 @@ const IsoQrEngine = (() => {
       blocksEc.push(rsEncodeBlock(blk, spec.ec));
     }
 
-    // Interleave data blocks then ECC blocks
     const finalCodewords = [];
     const maxDataLen = Math.max(...blocksData.map(x => x.length));
     for (let i = 0; i < maxDataLen; i++) {
@@ -569,7 +570,6 @@ const IsoQrEngine = (() => {
 
     const { mod, isFunc, n } = buildBaseMatrix(ver, stream);
 
-    // Evaluate masks 0..7 and pick lowest penalty score
     let bestGrid = null;
     let bestScore = Infinity;
     for (let m = 0; m < 8; m++) {
@@ -603,7 +603,14 @@ const IsoQrEngine = (() => {
 
 function defaultDb() {
   return {
-    shop: { name: "SSEDDUME DRUG SHOP MANAGEMENT SYSTEM", nda: "", lg: "", currency: "UGX" },
+    shop: {
+      name: "SSEDDUME DRUG SHOP MANAGEMENT SYSTEM",
+      branchCode: gatewayInfo.branchCode || "LOC-MAIN",
+      branchName: gatewayInfo.branchName || "MAIN BRANCH",
+      nda: "",
+      lg: "",
+      currency: "UGX"
+    },
     staff: [
       { id: "U-OWNER", name: "Owner / Administrator", role: "Owner", regNo: "NDA-OWN-01", pin: "0000", active: true },
       { id: "U-MGR", name: "In-Charge Pharmacist", role: "In-Charge", regNo: "NDA-IC-01", pin: "1111", active: true },
@@ -621,7 +628,7 @@ function defaultDb() {
 
 function loadDb() {
   try {
-    const raw = localStorage.getItem(STORAGE_KEY);
+    const raw = localStorage.getItem(storageKeyForBranch());
     if (!raw) return defaultDb();
     const p = JSON.parse(raw);
     const d = defaultDb();
@@ -643,20 +650,11 @@ function loadDb() {
   }
 }
 
-let db = loadDb();
-let currentOperator = db.staff.find(s => s.active !== false) || db.staff[0];
+let db = defaultDb();
+let currentOperator = db.staff[0];
 let activeTab = "sell";
-let activePairingMode = "STAFF"; // "STAFF" | "OWNER"
+let activePairingMode = "STAFF";
 let basket = [];
-let gatewayInfo = {
-  host: "Station",
-  lanIp: "127.0.0.1",
-  endpoint: "http://127.0.0.1:8080",
-  staffToken: "",
-  ownerToken: "",
-  staffQrPayload: "",
-  ownerQrPayload: ""
-};
 
 function canDo(cap) {
   const role = currentOperator?.role || "Dispenser";
@@ -669,14 +667,15 @@ function guardAction(cap, label = "this action") {
 }
 
 function saveDb() {
-  localStorage.setItem(STORAGE_KEY, JSON.stringify(db));
-  localStorage.setItem(SNAP_KEY, JSON.stringify({ savedAt: nowIso(), chk: checksum(db), data: db }));
+  localStorage.setItem(storageKeyForBranch(), JSON.stringify(db));
+  localStorage.setItem(snapKeyForBranch(), JSON.stringify({ savedAt: nowIso(), chk: checksum(db), data: db }));
   renderTopbar();
 }
 
 function addAudit(action, detail) {
   const entry = {
     time: nowIso(),
+    branchCode: gatewayInfo.branchCode || db.shop.branchCode || "LOC-MAIN",
     user: currentOperator ? `${currentOperator.name} (${currentOperator.role})` : "Workstation",
     action,
     detail
@@ -685,18 +684,21 @@ function addAudit(action, detail) {
   return entry;
 }
 
-/* ==================== IDEMPOTENT EVENT STREAMING & MERGE ==================== */
+/* ==================== BRANCH-SCOPED IDEMPOTENT EVENT STREAMING ==================== */
 function emitEvent(eventType, payload) {
   db.appliedEvents = Array.isArray(db.appliedEvents) ? db.appliedEvents : [];
   db.syncOutbox = Array.isArray(db.syncOutbox) ? db.syncOutbox : [];
-  const eventId = `${getDevId()}-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
+  const bCode = gatewayInfo.branchCode || db.shop.branchCode || "LOC-MAIN";
+  const eventId = `${bCode}-${getDevId()}-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
   db.appliedEvents.push(eventId);
   if (db.appliedEvents.length > 8000) db.appliedEvents = db.appliedEvents.slice(-8000);
 
   const cfg = getCloudCfg();
   const ev = {
     event_id: eventId,
-    shop_id: cfg.shopId || "SSEDDUME-MAIN",
+    branch_id: bCode,
+    branch_name: gatewayInfo.branchName || db.shop.branchName || "MAIN BRANCH",
+    shop_id: cfg.shopId || bCode,
     device_id: getDevId(),
     event_type: eventType,
     payload
@@ -708,6 +710,9 @@ function emitEvent(eventType, payload) {
 
 function applyIncomingEvent(ev) {
   if (!ev || !ev.event_id) return false;
+  const localBranch = gatewayInfo.branchCode || db.shop.branchCode || "LOC-MAIN";
+  if (ev.branch_id && ev.branch_id !== localBranch) return false;
+
   db.appliedEvents = Array.isArray(db.appliedEvents) ? db.appliedEvents : [];
   if (db.appliedEvents.includes(ev.event_id)) return false;
   db.appliedEvents.push(ev.event_id);
@@ -723,6 +728,9 @@ function applyIncomingEvent(ev) {
   } else if (ev.event_type === "BATCH_DELTA" && p.batchId && Number.isInteger(p.delta)) {
     const b = db.batches.find(x => x.id === p.batchId);
     if (b) b.qty = Math.max(0, b.qty + p.delta);
+  } else if (ev.event_type === "STOCK_ADJUST" && p.batchId && Number.isInteger(p.newQty)) {
+    const b = db.batches.find(x => x.id === p.batchId);
+    if (b) b.qty = Math.max(0, p.newQty);
   } else if (ev.event_type === "SALE_LINE" && p.sale) {
     if (!db.sales.some(s => s.id === p.sale.id)) db.sales.unshift(p.sale);
   } else if (ev.event_type === "SALE_VOID" && p.saleId) {
@@ -803,13 +811,53 @@ async function rotateGatewayKeys() {
   }
 }
 
+async function saveBranchIdentity() {
+  if (!guardAction("admin", "updating branch / location identity")) return;
+  const nextName = (document.getElementById("bName")?.value || "").trim();
+  const nextCode = (document.getElementById("bCode")?.value || "").trim().toUpperCase();
+  if (!nextName || !nextCode) return alert("Both Location Name and Location Code are required.");
+
+  const prevCode = gatewayInfo.branchCode || "LOC-MAIN";
+  try {
+    const res = await fetchWithTimeout("http://127.0.0.1:8080/api/admin/branch", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "X-Pair-Token": gatewayInfo.ownerToken || ""
+      },
+      body: JSON.stringify({ branchCode: nextCode, branchName: nextName })
+    }, 4000);
+    if (res.ok) {
+      const data = await res.json();
+      gatewayInfo = { ...gatewayInfo, ...data };
+    } else {
+      gatewayInfo.branchCode = nextCode;
+      gatewayInfo.branchName = nextName;
+    }
+  } catch (_) {
+    gatewayInfo.branchCode = nextCode;
+    gatewayInfo.branchName = nextName;
+  }
+
+  db.shop.branchCode = gatewayInfo.branchCode;
+  db.shop.branchName = gatewayInfo.branchName;
+  if (prevCode !== gatewayInfo.branchCode) {
+    addAudit("BRANCH_MIGRATE", `Migrated workstation storage from ${prevCode} to ${gatewayInfo.branchCode} (${gatewayInfo.branchName})`);
+  } else {
+    addAudit("BRANCH_CONFIG", `Updated location label to ${gatewayInfo.branchName} (${gatewayInfo.branchCode})`);
+  }
+  saveDb();
+  render();
+  toast(`Location saved: ${gatewayInfo.branchName}`);
+}
+
 function getCloudCfg() {
   try {
     return JSON.parse(localStorage.getItem(CLOUD_CFG_KEY) || "null") || {
-      enabled: false, url: "", anonKey: "", shopId: "SSEDDUME-MAIN", lastSeq: 0
+      enabled: false, url: "", anonKey: "", shopId: gatewayInfo.branchCode || "LOC-MAIN", lastSeq: 0
     };
   } catch (_) {
-    return { enabled: false, url: "", anonKey: "", shopId: "SSEDDUME-MAIN", lastSeq: 0 };
+    return { enabled: false, url: "", anonKey: "", shopId: gatewayInfo.branchCode || "LOC-MAIN", lastSeq: 0 };
   }
 }
 function saveCloudCfg(c) { localStorage.setItem(CLOUD_CFG_KEY, JSON.stringify(c)); }
@@ -817,6 +865,7 @@ function saveCloudCfg(c) { localStorage.setItem(CLOUD_CFG_KEY, JSON.stringify(c)
 function setupCloudSyncPrompt() {
   if (!guardAction("admin", "configuring cloud synchronization")) return;
   const cur = getCloudCfg();
+  const defaultCode = gatewayInfo.branchCode || "LOC-MAIN";
   const url = (prompt("Cloud Sync Endpoint URL (leave blank to disable):", cur.url) || "").trim().replace(/\/+$/, "");
   if (!url) {
     saveCloudCfg({ ...cur, enabled: false });
@@ -826,9 +875,9 @@ function setupCloudSyncPrompt() {
   }
   const anonKey = (prompt("Cloud Sync Public Key:", cur.anonKey) || "").trim();
   if (!anonKey) return;
-  const shopId = (prompt("Facility Sync ID:", cur.shopId || "SSEDDUME-MAIN") || "SSEDDUME-MAIN").trim();
+  const shopId = (prompt("Branch Sync Namespace (use unique location code per branch):", cur.shopId || defaultCode) || defaultCode).trim();
   saveCloudCfg({ enabled: true, url, anonKey, shopId, lastSeq: cur.lastSeq || 0 });
-  addAudit("SYNC_CFG", `Configured cloud synchronization for facility ${shopId}`);
+  addAudit("SYNC_CFG", `Configured cloud synchronization for branch ${shopId}`);
   saveDb(); updateSyncBadge();
   flushCloudOutbox();
   toast("Cloud synchronization configured");
@@ -871,7 +920,7 @@ async function flushCloudOutbox() {
         cfg.lastSeq = maxSeq;
         saveCloudCfg(cfg);
       }
-      if (changed) { saveDb(); render(); toast("Pulled remote synchronization events"); }
+      if (changed) { saveDb(); render(); toast("Pulled remote branch synchronization events"); }
     }
   } catch (_) {}
   finally { cloudBusy = false; updateSyncBadge(); }
@@ -897,7 +946,7 @@ function updateSyncBadge() {
 async function fetchGatewayInfo() {
   try {
     const r = await fetchWithTimeout("http://127.0.0.1:8080/api/gateway-info", { cache: "no-store" }, 3000);
-    if (r.ok) gatewayInfo = await r.json();
+    if (r.ok) gatewayInfo = { ...gatewayInfo, ...(await r.json()) };
   } catch (_) {}
 }
 
@@ -919,7 +968,10 @@ setInterval(pollGatewayEvents, 4000);
 setInterval(flushCloudOutbox, 20000);
 
 function renderTopbar() {
+  const bName = gatewayInfo.branchName || db.shop.branchName || "MAIN BRANCH";
+  const bCode = gatewayInfo.branchCode || db.shop.branchCode || "LOC-MAIN";
   document.getElementById("hdrTitle").textContent = db.shop.name || "SSEDDUME DRUG SHOP MANAGEMENT SYSTEM";
+  document.getElementById("hdrBranchTag").textContent = `${bName} (${bCode})`;
   document.getElementById("hdrSub").textContent = `NDA: ${db.shop.nda || "N/A"} • LG: ${db.shop.lg || "N/A"} • ${gatewayInfo.endpoint || "Secure POS Gateway"}`;
   document.getElementById("hdrUser").textContent = `${currentOperator.name} (${currentOperator.role})`;
 
@@ -930,8 +982,8 @@ function renderTopbar() {
 
   const hint = document.getElementById("roleHint");
   if (hint) {
-    if (currentOperator.role === "Owner") hint.textContent = "Full clearance: POS, FEFO GRN, voids, audit logs, key rotation & sync.";
-    else if (currentOperator.role === "In-Charge") hint.textContent = "Clinical & stock clearance: GRN, formulary, credit & voids.";
+    if (currentOperator.role === "Owner") hint.textContent = "Full clearance: POS, FEFO GRN, voids, audit logs, branch config & keys.";
+    else if (currentOperator.role === "In-Charge") hint.textContent = "Clinical & stock clearance: GRN, formulary, credit, counts & voids.";
     else hint.textContent = "Dispensing clearance: barcode scan, POS cart & dispensing only.";
   }
 
@@ -971,7 +1023,7 @@ function changeOperator() {
 }
 
 function switchTab(tab) {
-  if (tab === "admin" && !guardAction("admin", "Gateway & Clearance settings")) return;
+  if (tab === "admin" && !guardAction("admin", "Gateway, Branch & Keys settings")) return;
   activeTab = tab;
   document.querySelectorAll(".nav-item").forEach(b => b.classList.toggle("active", b.dataset.tab === tab));
   if (tab === "admin") fetchGatewayInfo().then(() => render());
@@ -1193,7 +1245,8 @@ function checkout() {
     cashPaid = dep;
     crBal = money(grand - dep);
   }
-  const rcpId = "VCH-" + Date.now();
+  const bCode = gatewayInfo.branchCode || db.shop.branchCode || "LOC-MAIN";
+  const rcpId = `VCH-${bCode}-${Date.now()}`;
   for (const it of basket) {
     let rem = it.qty;
     const batches = db.batches.filter(b => b.medId === it.medId && isDispenseEligible(b)).sort((a, b) => a.expiry.localeCompare(b.expiry));
@@ -1205,7 +1258,8 @@ function checkout() {
       const lTot = money(take * it.unitPrice);
       const ratio = grand > 0 ? lTot / grand : 0;
       const saleRec = {
-        id: "S-" + Date.now() + "-" + Math.random().toString(36).slice(2, 6),
+        id: `S-${bCode}-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+        branchCode: bCode,
         receiptId: rcpId, time: nowIso(), medId: it.medId, medName: it.medName,
         batchId: b.id, batchNo: b.batchNo, qty: take, unitPrice: it.unitPrice, total: lTot,
         payMethod, cashPaid: money(cashPaid * ratio), mmPaid: money(mmPaid * ratio),
@@ -1219,7 +1273,7 @@ function checkout() {
     addAudit("DISPENSE", `[${rcpId}] Dispensed ${it.qty} ${it.baseUnit} ${it.medName} (${payMethod})`);
   }
   if (payMethod === "CREDIT" && crBal > 0) {
-    const cr = { id: "CRD-" + Date.now(), receiptId: rcpId, time: nowIso(), customer: crCust, total: grand, paid: cashPaid, balance: crBal, settled: false };
+    const cr = { id: `CRD-${bCode}-${Date.now()}`, branchCode: bCode, receiptId: rcpId, time: nowIso(), customer: crCust, total: grand, paid: cashPaid, balance: crBal, settled: false };
     db.credits.unshift(cr);
     emitEvent("CREDIT_UPSERT", { credit: cr });
   }
@@ -1244,8 +1298,10 @@ function viewReceipt(key) {
   if (!lines.length) return;
   const first = lines[0];
   const tot = money(lines.filter(l => !l.voided).reduce((a, b) => a + money(b.total), 0));
+  const branchLabel = `${gatewayInfo.branchName || db.shop.branchName || "MAIN BRANCH"} (${gatewayInfo.branchCode || db.shop.branchCode || "LOC-MAIN"})`;
   document.getElementById("receiptBox").innerHTML = `
-    <h3>${esc(db.shop.name)}</h3>
+    <h3 style="margin-bottom:2px;">${esc(db.shop.name)}</h3>
+    <div style="font-size:12px;font-weight:700;color:var(--primary-dark);margin-bottom:4px;">Location: ${esc(branchLabel)}</div>
     <div style="font-size:12px;color:var(--muted);margin-bottom:10px;">Voucher: <b>${esc(key)}</b> • ${esc(first.time.slice(0, 16).replace("T", " "))} • ${esc(first.dispenser)}</div>
     <table style="margin-bottom:10px;"><thead><tr><th>Preparation</th><th>Qty</th><th>Amount</th></tr></thead><tbody>${lines.map(l => `<tr><td>${esc(l.medName)} (${esc(l.batchNo)})${l.dosage ? `<br><small>${esc(l.dosage)}</small>` : ""}</td><td>${l.qty}</td><td>${money(l.total).toFixed(2)}${l.voided ? " (VOID)" : ""}</td></tr>`).join("")}</tbody></table>
     <div style="display:flex;justify-content:space-between;font-weight:700;margin-bottom:12px;"><span>Total (${esc(first.payMethod)})</span><span>${tot.toFixed(2)}</span></div>
@@ -1256,16 +1312,32 @@ function viewReceipt(key) {
 
 function renderGrn(el) {
   const allowed = canDo("grn");
+  const allowAdjust = canDo("stock_adjust");
   const opts = db.medicines.map(m => `<option value="${esc(m.id)}">${esc(m.generic_name)} ${esc(m.strength)} (${esc(m.base_unit)})</option>`).join("");
   const rows = db.batches.map(b => {
     const m = db.medicines.find(x => x.id === b.medId);
     const st = batchState(b);
     const badgeCls = st === "ACTIVE" ? "ok" : (st === "EXPIRES_TODAY" ? "warn" : "bad");
-    return `<tr><td>${esc(m ? m.generic_name : b.medId)}</td><td>${esc(b.batchNo)}</td><td>${esc(b.wholesaler)} / ${esc(b.invoiceNo)}</td><td>${esc(b.expiry)}</td><td>${b.qty}</td><td><span class="badge ${badgeCls}">${st}</span></td><td><button class="ghost" ${allowed ? "" : "disabled"} onclick="toggleQ('${esc(b.id)}')">${b.quarantined ? "Release" : "Quarantine"}</button></td></tr>`;
+    return `
+      <tr>
+        <td>${esc(m ? m.generic_name : b.medId)}</td>
+        <td>${esc(b.batchNo)}</td>
+        <td>${esc(b.wholesaler)} / ${esc(b.invoiceNo)}</td>
+        <td>${esc(b.expiry)}</td>
+        <td><strong>${b.qty}</strong></td>
+        <td><span class="badge ${badgeCls}">${st}</span></td>
+        <td>
+          <div class="row" style="margin:0;gap:5px;">
+            <button class="ghost" ${allowed ? "" : "disabled"} onclick="toggleQ('${esc(b.id)}')">${b.quarantined ? "Release" : "Quarantine"}</button>
+            <button class="ghost" ${allowAdjust ? "" : "disabled"} onclick="adjustBatchCount('${esc(b.id)}')">Stock Count</button>
+          </div>
+        </td>
+      </tr>
+    `;
   }).join("");
   el.innerHTML = `
     ${renderAlerts()}
-    ${!allowed ? `<div class="alert alert-warn"><strong>Read-Only View:</strong> Receiving GRN consignments or quarantining lots requires <b>In-Charge Pharmacist</b> or <b>Owner / Administrator</b> clearance.</div>` : ""}
+    ${!allowed ? `<div class="alert alert-warn"><strong>Read-Only View:</strong> Posting GRN consignments or adjusting batch counts requires <b>In-Charge Pharmacist</b> or <b>Owner / Administrator</b> clearance.</div>` : ""}
     <div class="card">
       <h3>Goods Received Note (GRN)</h3>
       <div class="row">
@@ -1280,7 +1352,7 @@ function renderGrn(el) {
         <button class="primary" ${allowed ? "" : "disabled"} onclick="saveGrn()">Post GRN Batch</button>
       </div>
     </div>
-    <div class="card"><h3>Batch Inventory Ledger</h3><div class="table-wrap"><table><thead><tr><th>Preparation</th><th>Batch / Lot</th><th>Supplier / Invoice</th><th>Expiry</th><th>Units</th><th>Status</th><th>Quarantine</th></tr></thead><tbody>${rows}</tbody></table></div></div>
+    <div class="card"><h3>Batch Inventory Ledger</h3><div class="table-wrap"><table><thead><tr><th>Preparation</th><th>Batch / Lot</th><th>Supplier / Invoice</th><th>Expiry</th><th>Units</th><th>Status</th><th>Controls</th></tr></thead><tbody>${rows}</tbody></table></div></div>
   `;
 }
 function saveGrn() {
@@ -1293,7 +1365,8 @@ function saveGrn() {
   const qty = parseInt(document.getElementById("gQty").value || "0", 10);
   if (!medId || !wholesaler || !invoiceNo || !batchNo || !expiry || qty <= 0) return alert("Complete all required GRN fields.");
   if (expiry <= todayStr()) return alert("Expired or same-day expiring stock cannot be received.");
-  const batch = { id: "B-" + Date.now(), medId, wholesaler, invoiceNo, batchNo, expiry, qty, quarantined: false };
+  const bCode = gatewayInfo.branchCode || db.shop.branchCode || "LOC-MAIN";
+  const batch = { id: `B-${bCode}-${Date.now()}`, branchCode: bCode, medId, wholesaler, invoiceNo, batchNo, expiry, qty, quarantined: false };
   db.batches.push(batch);
   emitEvent("BATCH_GRN", { batch });
   addAudit("GRN_POST", `Received ${qty} units batch ${batchNo} (${wholesaler})`);
@@ -1307,6 +1380,22 @@ function toggleQ(id) {
   addAudit("BATCH_QUARANTINE", `Batch ${b.batchNo} quarantined=${b.quarantined}`);
   saveDb(); render();
 }
+function adjustBatchCount(id) {
+  if (!guardAction("stock_adjust", "recording physical stock count adjustments")) return;
+  const b = db.batches.find(x => x.id === id);
+  if (!b) return;
+  const raw = prompt(`Physical count for batch ${b.batchNo} (current ledger: ${b.qty}):`, String(b.qty));
+  if (raw === null) return;
+  const newQty = parseInt(raw.trim(), 10);
+  if (!Number.isInteger(newQty) || newQty < 0) return alert("Enter a valid non-negative integer count.");
+  const reason = (prompt("Reason for physical stock adjustment (e.g. cycle count, breakage):") || "").trim();
+  if (!reason) return alert("Adjustment reason is required for compliance audit.");
+  const oldQty = b.qty;
+  b.qty = newQty;
+  emitEvent("STOCK_ADJUST", { batchId: b.id, newQty });
+  addAudit("STOCK_RECONCILE", `Batch ${b.batchNo} adjusted ${oldQty} -> ${newQty} (${reason})`);
+  saveDb(); render(); toast("Physical count reconciled");
+}
 
 function renderMeds(el) {
   const allowed = canDo("meds");
@@ -1317,12 +1406,19 @@ function renderMeds(el) {
       <h3>Register Formulary Item</h3>
       <div class="row">
         <input id="mGen" type="text" ${allowed ? "" : "disabled"} placeholder="Generic Name *" style="flex:1;min-width:160px;" />
-        <input id="mBrand" type="text" ${allowed ? "" : "disabled"} placeholder="Brand / Trade" style="width:140px;" />
-        <input id="mStr" type="text" ${allowed ? "" : "disabled"} placeholder="Strength" style="width:120px;" />
-        <input id="mUnit" type="text" ${allowed ? "" : "disabled"} value="TABLET" placeholder="Dispense Unit" style="width:110px;" />
-        <input id="mPrice" type="number" step="0.01" ${allowed ? "" : "disabled"} placeholder="Unit Price" style="width:110px;" />
+        <input id="mBrand" type="text" ${allowed ? "" : "disabled"} placeholder="Brand / Trade" style="width:130px;" />
+        <input id="mStr" type="text" ${allowed ? "" : "disabled"} placeholder="Strength" style="width:110px;" />
+        <input id="mUnit" type="text" ${allowed ? "" : "disabled"} value="TABLET" placeholder="Dispense Unit" style="width:105px;" />
+        <input id="mPrice" type="number" step="0.01" ${allowed ? "" : "disabled"} placeholder="Unit Price" style="width:105px;" />
+        <input id="mBarcode" type="text" ${allowed ? "" : "disabled"} placeholder="Barcode" style="width:130px;" />
         <select id="mSched" ${allowed ? "" : "disabled"}><option value="CLASS_C">CLASS_C</option><option value="RESTRICTED">RESTRICTED</option></select>
         <button class="primary" ${allowed ? "" : "disabled"} onclick="addMed()">Save Item</button>
+      </div>
+      <div class="row" style="margin-top:6px;margin-bottom:0;">
+        <label class="ghost" style="display:inline-flex;align-items:center;margin:0;${allowed ? "" : "opacity:0.45;pointer-events:none;"}">
+          Import Formulary CSV <input type="file" accept=".csv,text/csv" ${allowed ? "" : "disabled"} onchange="importFormularyCsv(event)" style="display:none;" />
+        </label>
+        <span style="font-size:12px;color:var(--muted);">CSV columns: <code>generic_name,brand_name,strength,base_unit,price,reorder_level,nda_schedule,barcode</code></span>
       </div>
     </div>
     <div class="card"><h3>Formulary Catalogue (${db.medicines.length})</h3><div class="table-wrap"><table><thead><tr><th>Generic Name</th><th>Brand</th><th>Strength</th><th>Unit Price</th><th>Eligible Stock</th><th>Schedule</th></tr></thead><tbody>${rows}</tbody></table></div></div>
@@ -1332,13 +1428,15 @@ function addMed() {
   if (!guardAction("meds", "registering formulary items")) return;
   const generic_name = document.getElementById("mGen").value.trim();
   if (!generic_name) return alert("Generic name is required.");
+  const bCode = gatewayInfo.branchCode || db.shop.branchCode || "LOC-MAIN";
   const med = {
-    id: "M-" + Date.now(),
+    id: `M-${bCode}-${Date.now()}`,
     generic_name,
     brand_name: document.getElementById("mBrand").value.trim(),
     strength: document.getElementById("mStr").value.trim(),
     base_unit: (document.getElementById("mUnit").value || "TABLET").trim().toUpperCase(),
     default_unit_price: money(parseFloat(document.getElementById("mPrice").value || "0")),
+    barcode: (document.getElementById("mBarcode")?.value || "").trim(),
     reorder_level: 10,
     nda_schedule: document.getElementById("mSched").value
   };
@@ -1346,6 +1444,46 @@ function addMed() {
   emitEvent("MED_UPSERT", { med });
   addAudit("FORMULARY_ADD", `Registered ${generic_name}`);
   saveDb(); render(); toast("Formulary item saved");
+}
+
+async function importFormularyCsv(ev) {
+  if (!guardAction("meds", "importing formulary CSV")) { ev.target.value = ""; return; }
+  const f = ev.target.files?.[0];
+  ev.target.value = "";
+  if (!f) return;
+  const text = await f.text();
+  const lines = text.split(/\r?\n/).map(l => l.trim()).filter(Boolean);
+  if (lines.length < 2) return alert("CSV file requires a header row and at least one item row.");
+  const bCode = gatewayInfo.branchCode || db.shop.branchCode || "LOC-MAIN";
+  let imported = 0;
+  for (let i = 1; i < lines.length; i++) {
+    const cols = lines[i].split(",").map(c => c.trim().replace(/^"|"$/g, ""));
+    const generic_name = cols[0] || "";
+    if (!generic_name) continue;
+    const brand_name = cols[1] || "";
+    const strength = cols[2] || "";
+    const existing = db.medicines.find(m =>
+      m.generic_name.toLowerCase() === generic_name.toLowerCase() &&
+      (m.strength || "").toLowerCase() === strength.toLowerCase()
+    );
+    const med = {
+      id: existing ? existing.id : `M-${bCode}-${Date.now()}-${i}`,
+      generic_name,
+      brand_name,
+      strength,
+      base_unit: (cols[3] || "TABLET").toUpperCase(),
+      default_unit_price: money(parseFloat(cols[4] || "0")),
+      reorder_level: Math.max(0, parseInt(cols[5] || "10", 10) || 10),
+      nda_schedule: (cols[6] || "CLASS_C").toUpperCase() === "RESTRICTED" ? "RESTRICTED" : "CLASS_C",
+      barcode: cols[7] || ""
+    };
+    if (existing) Object.assign(existing, med);
+    else db.medicines.push(med);
+    emitEvent("MED_UPSERT", { med });
+    imported++;
+  }
+  addAudit("FORMULARY_CSV", `Imported/updated ${imported} formulary items from ${f.name}`);
+  saveDb(); render(); toast(`Imported ${imported} formulary items`);
 }
 
 function renderReports(el) {
@@ -1363,7 +1501,7 @@ function renderReports(el) {
 
   const auditSection = allowAudit
     ? `<div class="card"><h3>Financial &amp; Compliance Audit Trail</h3><div class="table-wrap"><table><thead><tr><th>Timestamp</th><th>Clearance</th><th>Event</th><th>Details</th></tr></thead><tbody>${
-        db.audit.slice(0, 40).map(a => `<tr><td>${esc(a.time.slice(0, 16).replace("T", " "))}</td><td>${esc(a.user)}</td><td>${esc(a.action)}</td><td>${esc(a.detail)}</td></tr>`).join("") || `<tr><td colspan="4" style="color:var(--muted);">No audit entries recorded.</td></tr>`
+        db.audit.slice(0, 50).map(a => `<tr><td>${esc(a.time.slice(0, 16).replace("T", " "))}</td><td>${esc(a.user)}</td><td>${esc(a.action)}</td><td>${esc(a.detail)}</td></tr>`).join("") || `<tr><td colspan="4" style="color:var(--muted);">No audit entries recorded.</td></tr>`
       }</tbody></table></div></div>`
     : `<div class="alert alert-warn"><strong>Audit Trail Restricted:</strong> Full financial and compliance audit logs are restricted to <b>Owner / Administrator</b> clearance.</div>`;
 
@@ -1387,12 +1525,14 @@ function payCr(id) {
 }
 
 function renderAdmin(el) {
-  if (!guardAction("admin", "Gateway & Clearance administration")) return;
+  if (!guardAction("admin", "Gateway, Branch & Keys administration")) return;
   const cfg = getCloudCfg();
   const isOwnerMode = activePairingMode === "OWNER";
+  const bCode = gatewayInfo.branchCode || db.shop.branchCode || "LOC-MAIN";
+  const bName = gatewayInfo.branchName || db.shop.branchName || "MAIN BRANCH";
   const payloadStr = isOwnerMode
-    ? (gatewayInfo.ownerQrPayload || "SSEDDUME-POS|OWNER|Station|http://127.0.0.1:8080|OWN-LOCAL")
-    : (gatewayInfo.staffQrPayload || "SSEDDUME-POS|STAFF|Station|http://127.0.0.1:8080|STF-LOCAL");
+    ? (gatewayInfo.ownerQrPayload || `SSEDDUME-POS|OWNER|${bCode}|STATION|http://127.0.0.1:8080|OWN-LOCAL`)
+    : (gatewayInfo.staffQrPayload || `SSEDDUME-POS|STAFF|${bCode}|STATION|http://127.0.0.1:8080|STF-LOCAL`);
 
   const hasLan = gatewayInfo.lanIp && gatewayInfo.lanIp !== "127.0.0.1";
   const lanBadge = hasLan
@@ -1411,6 +1551,18 @@ function renderAdmin(el) {
 
   el.innerHTML = `
     <div class="card">
+      <h3>Branch / Location Identity (Multi-Site Isolation)</h3>
+      <p style="font-size:13px;color:var(--muted);margin:0 0 10px;">
+        Each location-named branch maintains isolated stock, vouchers, and QR pairing credentials so multiple sites operate independently without data collision.
+      </p>
+      <div class="row" style="margin-bottom:0;">
+        <input id="bName" type="text" value="${esc(bName)}" placeholder="Location Display Name (e.g., SSEDDUME - MENGO)" style="flex:1.4;min-width:220px;" />
+        <input id="bCode" type="text" value="${esc(bCode)}" placeholder="Location Code (e.g., LOC-MENGO)" style="flex:0.8;min-width:150px;" />
+        <button class="primary" onclick="saveBranchIdentity()">Save Branch Identity</button>
+      </div>
+    </div>
+
+    <div class="card">
       <h3>Secure Terminal &amp; Mobile POS Synchronization Gateway</h3>
       <div class="pair-tabs">
         <button class="pair-tab ${!isOwnerMode ? "active" : ""}" onclick="setPairingMode('STAFF')">Staff / Dispenser Pairing QR (Restricted)</button>
@@ -1419,11 +1571,11 @@ function renderAdmin(el) {
       <div class="qr-card">
         <div class="qr-box">${IsoQrEngine.encodeSvg(payloadStr, 188)}</div>
         <div style="flex:1;min-width:250px;">
-          ${lanBadge} <span class="badge ${isOwnerMode ? "info" : "ok"}">${isOwnerMode ? "OWNER CLEARANCE" : "STAFF CLEARANCE"}</span>
+          ${lanBadge} <span class="badge ${isOwnerMode ? "info" : "ok"}">${isOwnerMode ? "OWNER CLEARANCE" : "STAFF CLEARANCE"}</span> <span class="badge info">${esc(bCode)}</span>
           <div style="font-size:13px;margin-top:8px;line-height:1.55;">
             ${isOwnerMode
-              ? "<strong>Owner / Administrator Credential:</strong> Authorizes full event telemetry, audit log access, and administrative synchronization on paired mobile devices."
-              : "<strong>Staff / Dispenser Credential:</strong> Restricted to operational barcode scanning, POS sales streaming (<code>/api/events</code>), and stock counts; blocks audit access and administrative changes."}
+              ? "<strong>Owner / Administrator Credential:</strong> Authorizes full event telemetry, audit log access, and administrative synchronization for this branch."
+              : "<strong>Staff / Dispenser Credential:</strong> Restricted to operational barcode scanning, POS sales streaming (<code>/api/events</code>), and stock counts for this branch; blocks audit access and administrative changes."}
           </div>
           <div style="margin-top:8px;font-size:12px;color:var(--muted);word-break:break-all;">
             Pairing Payload: <code>${esc(payloadStr)}</code>
@@ -1440,7 +1592,7 @@ function renderAdmin(el) {
     <div class="card">
       <h3>Cloud Synchronization Relay</h3>
       <p style="font-size:13px;color:var(--muted);margin:0 0 10px;">
-        Status: <strong>${cfg.enabled ? `Enabled (${esc(cfg.url)} • Facility: ${esc(cfg.shopId)})` : "Local Gateway Only"}</strong> &bull; Pending outbox events: <strong>${(db.syncOutbox || []).length}</strong>
+        Status: <strong>${cfg.enabled ? `Enabled (${esc(cfg.url)} • Branch Namespace: ${esc(cfg.shopId)})` : "Local Branch Gateway Only"}</strong> &bull; Pending outbox events: <strong>${(db.syncOutbox || []).length}</strong>
       </p>
       <div class="row">
         <button class="accent" onclick="setupCloudSyncPrompt()">Configure Cloud Relay</button>
@@ -1499,13 +1651,22 @@ function saveShop() {
 
 function exportBundleJson() {
   const snap = JSON.parse(JSON.stringify(db));
-  const pkg = { system: "SSEDDUME DRUG SHOP MANAGEMENT SYSTEM", exportedAt: nowIso(), checksum: checksum(snap), data: snap };
+  const bCode = gatewayInfo.branchCode || db.shop.branchCode || "LOC-MAIN";
+  const bName = gatewayInfo.branchName || db.shop.branchName || "MAIN BRANCH";
+  const pkg = {
+    system: "SSEDDUME DRUG SHOP MANAGEMENT SYSTEM",
+    branchCode: bCode,
+    branchName: bName,
+    exportedAt: nowIso(),
+    checksum: checksum(snap),
+    data: snap
+  };
   const blob = new Blob([JSON.stringify(pkg, null, 2)], { type: "application/json" });
   const a = document.createElement("a");
   a.href = URL.createObjectURL(blob);
-  a.download = `sseddume-gateway-snapshot-${todayStr()}.json`;
+  a.download = `sseddume-${bCode.toLowerCase()}-snapshot-${todayStr()}.json`;
   a.click();
-  toast("Snapshot exported");
+  toast("Branch snapshot exported");
 }
 
 async function importBundleJson(ev) {
@@ -1518,6 +1679,12 @@ async function importBundleJson(ev) {
     const payload = raw?.snapshot && typeof raw.snapshot === "object" ? raw.snapshot : (raw?.data && typeof raw.data === "object" ? raw.data : raw);
     if (raw?.checksum && checksum(payload) !== raw.checksum) return alert("Checksum verification failed — snapshot is corrupted.");
     if (!Array.isArray(payload.medicines) || !Array.isArray(payload.batches) || !Array.isArray(payload.sales)) return alert("Invalid snapshot structure.");
+
+    const localBranch = gatewayInfo.branchCode || db.shop.branchCode || "LOC-MAIN";
+    if (raw?.branchCode && raw.branchCode !== localBranch) {
+      const ok = confirm(`Warning: This snapshot belongs to branch "${raw.branchName || raw.branchCode}" (${raw.branchCode}), while this station is "${localBranch}". Import anyway?`);
+      if (!ok) return;
+    }
 
     for (const m of payload.medicines) {
       const i = db.medicines.findIndex(x => x.id === m.id);
@@ -1532,7 +1699,14 @@ async function importBundleJson(ev) {
     for (const s of payload.sales) {
       if (!db.sales.some(x => x.id === s.id)) db.sales.unshift(s);
     }
-    if (payload.shop) db.shop = { ...db.shop, ...payload.shop };
+    if (payload.shop) {
+      db.shop = {
+        ...db.shop,
+        ...payload.shop,
+        branchCode: localBranch,
+        branchName: gatewayInfo.branchName || db.shop.branchName
+      };
+    }
     addAudit("SNAPSHOT_IMPORT", `Merged snapshot ${f.name}`);
     saveDb(); render(); toast("Snapshot merged");
   } catch (err) {
@@ -1542,6 +1716,10 @@ async function importBundleJson(ev) {
 
 (async () => {
   await fetchGatewayInfo();
+  db = loadDb();
+  db.shop.branchCode = gatewayInfo.branchCode || db.shop.branchCode || "LOC-MAIN";
+  db.shop.branchName = gatewayInfo.branchName || db.shop.branchName || "MAIN BRANCH";
+  currentOperator = db.staff.find(s => s.active !== false) || db.staff[0];
   renderTopbar();
   render();
   pollGatewayEvents();
