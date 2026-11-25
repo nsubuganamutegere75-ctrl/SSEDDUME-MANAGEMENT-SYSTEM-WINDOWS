@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Diagnostics;
 using System.Drawing;
 using System.IO;
 using System.Linq;
@@ -19,7 +20,7 @@ namespace SseddumeDrugShop;
 
 internal static class Program
 {
-    private const string MutexName = @"Global\SseddumeDrugShop_WindowsGateway_v3";
+    private const string MutexName = @"Global\SseddumeDrugShop_UniversalGateway_v1";
 
     [STAThread]
     private static void Main()
@@ -45,6 +46,7 @@ internal sealed class MainForm : Form
 {
     private readonly WebView2 _webView;
     private HttpListener? _listener;
+    private System.Windows.Forms.Timer? _watchTimer;
     private readonly string _appDataDir;
     private readonly string _eventLogPath;
     private readonly string _ownerTokenFile;
@@ -56,11 +58,13 @@ internal sealed class MainForm : Form
     private string _branchName = "MAIN BRANCH";
     private readonly int _port = 8080;
     private readonly object _fileLock = new();
-    private string _activeLanIp = "127.0.0.1";
+    private readonly HashSet<string> _boundPrefixes = new(StringComparer.OrdinalIgnoreCase);
+    private string _primaryIp = "127.0.0.1";
+    private List<string> _allLanIps = new();
 
     public MainForm()
     {
-        Text = "SSEDDUME DRUG SHOP MANAGEMENT SYSTEM — Secure Terminal & Mobile POS Synchronization Gateway";
+        Text = "SSEDDUME DRUG SHOP MANAGEMENT SYSTEM — Universal Terminal & POS Gateway";
         Width = 1380;
         Height = 850;
         MinimumSize = new Size(1024, 680);
@@ -86,11 +90,13 @@ internal sealed class MainForm : Form
         Load += async (_, _) =>
         {
             StartGatewayServer();
+            StartWatcher();
             await InitWebViewAsync();
         };
         FormClosing += (_, _) =>
         {
-            try { _listener?.Stop(); } catch { }
+            try { _watchTimer?.Stop(); _watchTimer?.Dispose(); } catch { }
+            try { _listener?.Stop(); _listener?.Close(); } catch { }
         };
     }
 
@@ -157,47 +163,112 @@ internal sealed class MainForm : Form
         }
     }
 
-    private static string DetectBestLanIp()
+    private static List<string> DetectAllLanIps()
     {
-        try
-        {
-            using var socket = new Socket(AddressFamily.InterNetwork, SocketType.Dgram, 0);
-            socket.Connect("8.8.8.8", 65530);
-            if (socket.LocalEndPoint is IPEndPoint endPoint)
-            {
-                string ip = endPoint.Address.ToString();
-                if (!string.IsNullOrWhiteSpace(ip) && !ip.StartsWith("169.254.") && ip != "127.0.0.1")
-                    return ip;
-            }
-        }
-        catch { }
+        var ranked = new List<(int score, string ip)>();
 
         foreach (var ni in NetworkInterface.GetAllNetworkInterfaces())
         {
             if (ni.OperationalStatus != OperationalStatus.Up) continue;
             if (ni.NetworkInterfaceType == NetworkInterfaceType.Loopback) continue;
-            foreach (var ua in ni.GetIPProperties().UnicastAddresses)
+
+            string desc = (ni.Description ?? "").ToLowerInvariant();
+            string name = (ni.Name ?? "").ToLowerInvariant();
+            bool isVirtual = desc.Contains("virtual") || desc.Contains("pseudo") ||
+                             desc.Contains("hyper-v") || desc.Contains("vmware") ||
+                             desc.Contains("wsl") || name.Contains("vethernet");
+
+            int baseScore = ni.NetworkInterfaceType == NetworkInterfaceType.Wireless80211 ? 100 :
+                            ni.NetworkInterfaceType == NetworkInterfaceType.Ethernet ? 80 : 20;
+            if (isVirtual) baseScore -= 50;
+
+            var ipProps = ni.GetIPProperties();
+            bool hasGw = ipProps.GatewayAddresses.Any(g =>
+                g.Address.AddressFamily == AddressFamily.InterNetwork &&
+                g.Address.ToString() != "0.0.0.0");
+            if (hasGw) baseScore += 25;
+
+            foreach (var ua in ipProps.UnicastAddresses)
             {
                 if (ua.Address.AddressFamily == AddressFamily.InterNetwork)
                 {
                     string ip = ua.Address.ToString();
-                    if (!ip.StartsWith("169.254.") && ip != "127.0.0.1") return ip;
+                    if (string.IsNullOrWhiteSpace(ip) || ip == "127.0.0.1" || ip.StartsWith("169.254."))
+                        continue;
+
+                    int sc = baseScore;
+                    if (ip.StartsWith("192.168.137.")) sc += 25;
+                    else if (ip.StartsWith("192.168.") || ip.StartsWith("10.") || ip.StartsWith("172.")) sc += 10;
+
+                    ranked.Add((sc, ip));
                 }
             }
         }
-        return "127.0.0.1";
+
+        return ranked
+            .OrderByDescending(x => x.score)
+            .Select(x => x.ip)
+            .Distinct()
+            .ToList();
+    }
+
+    private void TryAddPrefix(HttpListener listener, string prefix)
+    {
+        if (_boundPrefixes.Contains(prefix)) return;
+        try
+        {
+            listener.Prefixes.Add(prefix);
+            _boundPrefixes.Add(prefix);
+        }
+        catch { }
+    }
+
+    private void SyncInterfacesAndPrefixes(bool notifyUi = false)
+    {
+        _allLanIps = DetectAllLanIps();
+        _primaryIp = _allLanIps.FirstOrDefault() ?? "127.0.0.1";
+
+        if (_listener != null && _listener.IsListening)
+        {
+            foreach (var ip in _allLanIps)
+            {
+                TryAddPrefix(_listener, $"http://{ip}:{_port}/");
+            }
+        }
+
+        if (notifyUi && _webView.CoreWebView2 != null)
+        {
+            string safeHost = SanitizeTag(Environment.MachineName, "STATION");
+            var msg = new { type = "GATEWAY_INFO", data = BuildGatewaySnapshot(safeHost) };
+            try { _webView.CoreWebView2.PostWebMessageAsJson(JsonSerializer.Serialize(msg)); } catch { }
+        }
+    }
+
+    private void StartWatcher()
+    {
+        _watchTimer = new System.Windows.Forms.Timer { Interval = 3000 };
+        _watchTimer.Tick += (_, _) =>
+        {
+            string prev = _primaryIp;
+            SyncInterfacesAndPrefixes(notifyUi: false);
+            if (_primaryIp != prev) SyncInterfacesAndPrefixes(notifyUi: true);
+        };
+        _watchTimer.Start();
     }
 
     private void StartGatewayServer()
     {
-        _activeLanIp = DetectBestLanIp();
-        var listener = new HttpListener();
-        listener.Prefixes.Add($"http://localhost:{_port}/");
-        listener.Prefixes.Add($"http://127.0.0.1:{_port}/");
+        _allLanIps = DetectAllLanIps();
+        _primaryIp = _allLanIps.FirstOrDefault() ?? "127.0.0.1";
 
-        if (_activeLanIp != "127.0.0.1")
+        var listener = new HttpListener();
+        TryAddPrefix(listener, $"http://localhost:{_port}/");
+        TryAddPrefix(listener, $"http://127.0.0.1:{_port}/");
+        TryAddPrefix(listener, $"http://+:{_port}/");
+
+        foreach (var ip in _allLanIps)
         {
-            try { listener.Prefixes.Add($"http://{_activeLanIp}:{_port}/"); } catch { }
+            TryAddPrefix(listener, $"http://{ip}:{_port}/");
         }
 
         try
@@ -210,29 +281,41 @@ internal sealed class MainForm : Form
         {
             try
             {
-                var localOnly = new HttpListener();
-                localOnly.Prefixes.Add($"http://localhost:{_port}/");
-                localOnly.Prefixes.Add($"http://127.0.0.1:{_port}/");
-                localOnly.Start();
-                _listener = localOnly;
+                var fallback = new HttpListener();
+                _boundPrefixes.Clear();
+                TryAddPrefix(fallback, $"http://localhost:{_port}/");
+                TryAddPrefix(fallback, $"http://127.0.0.1:{_port}/");
+                foreach (var ip in _allLanIps)
+                {
+                    TryAddPrefix(fallback, $"http://{ip}:{_port}/");
+                }
+                fallback.Start();
+                _listener = fallback;
                 _ = Task.Run(ListenLoopAsync);
             }
             catch { }
         }
     }
 
-    private void EnsureLanPrefixBound(string newIp)
+    private void RunElevatedFirewallAndAclHelper()
     {
-        if (string.IsNullOrWhiteSpace(newIp) || newIp == "127.0.0.1" || newIp == _activeLanIp || _listener == null)
-            return;
         try
         {
-            string prefix = $"http://{newIp}:{_port}/";
-            if (!_listener.Prefixes.Contains(prefix))
+            string cmd =
+                $"netsh http add urlacl url=http://+:{_port}/ user=Everyone & " +
+                $"netsh advfirewall firewall add rule name=\"Sseddume POS Gateway {_port}\" dir=in action=allow protocol=TCP localport={_port}";
+            var psi = new ProcessStartInfo
             {
-                _listener.Prefixes.Add(prefix);
-            }
-            _activeLanIp = newIp;
+                FileName = "cmd.exe",
+                Arguments = $"/c {cmd}",
+                Verb = "runas",
+                UseShellExecute = true,
+                CreateNoWindow = true
+            };
+            var proc = Process.Start(psi);
+            proc?.WaitForExit(8000);
+            StartGatewayServer();
+            SyncInterfacesAndPrefixes(notifyUi: true);
         }
         catch { }
     }
@@ -266,14 +349,16 @@ internal sealed class MainForm : Form
 
     private object BuildGatewaySnapshot(string safeHost)
     {
-        string endpoint = $"http://{_activeLanIp}:{_port}";
+        string ip = _primaryIp;
+        string endpoint = $"http://{ip}:{_port}";
         return new
         {
             ok = true,
             host = safeHost,
             branchCode = _branchCode,
             branchName = _branchName,
-            lanIp = _activeLanIp,
+            lanIp = ip,
+            lanIps = _allLanIps,
             endpoint,
             staffToken = _staffToken,
             ownerToken = _ownerToken,
@@ -324,13 +409,24 @@ internal sealed class MainForm : Form
         }
 
         string path = ctx.Request.Url?.AbsolutePath ?? "/";
-        string currentIp = DetectBestLanIp();
-        if (currentIp != "127.0.0.1") EnsureLanPrefixBound(currentIp);
-
         string safeHost = SanitizeTag(Environment.MachineName, "STATION");
 
         try
         {
+            if (path == "/api/ping" && ctx.Request.HttpMethod == "GET")
+            {
+                await WriteJsonAsync(ctx.Response, 200, JsonSerializer.Serialize(new
+                {
+                    ok = true,
+                    service = "SSEDDUME-POS",
+                    host = safeHost,
+                    branchCode = _branchCode,
+                    branchName = _branchName,
+                    lanIp = _primaryIp
+                }));
+                return;
+            }
+
             if (path == "/api/gateway-info" && ctx.Request.HttpMethod == "GET")
             {
                 if (!ctx.Request.IsLocal)
@@ -366,20 +462,6 @@ internal sealed class MainForm : Form
                     string name = doc.RootElement.TryGetProperty("branchName", out var n) ? (n.GetString() ?? _branchName) : _branchName;
                     SaveBranchConfig(code, name);
                     await WriteJsonAsync(ctx.Response, 200, JsonSerializer.Serialize(BuildGatewaySnapshot(safeHost)));
-                    return;
-                }
-
-                if (path == "/api/admin/audit-stream" && ctx.Request.HttpMethod == "GET")
-                {
-                    string[] lines;
-                    lock (_fileLock)
-                    {
-                        lines = File.Exists(_eventLogPath)
-                            ? File.ReadAllLines(_eventLogPath, Encoding.UTF8)
-                            : Array.Empty<string>();
-                    }
-                    string jsonArray = "[" + string.Join(",", lines.Where(l => !string.IsNullOrWhiteSpace(l)).TakeLast(2000)) + "]";
-                    await WriteJsonAsync(ctx.Response, 200, jsonArray);
                     return;
                 }
 
@@ -458,6 +540,69 @@ internal sealed class MainForm : Form
         resp.Close();
     }
 
+    private void WireWebViewIpc()
+    {
+        if (_webView.CoreWebView2 == null) return;
+        _webView.CoreWebView2.WebMessageReceived += (_, args) =>
+        {
+            try
+            {
+                using var doc = JsonDocument.Parse(args.WebMessageAsJson);
+                string cmd = doc.RootElement.GetProperty("cmd").GetString() ?? "";
+                string safeHost = SanitizeTag(Environment.MachineName, "STATION");
+                SyncInterfacesAndPrefixes(notifyUi: false);
+
+                if (cmd == "GET_GATEWAY_INFO")
+                {
+                    var payload = new { type = "GATEWAY_INFO", data = BuildGatewaySnapshot(safeHost) };
+                    _webView.CoreWebView2.PostWebMessageAsJson(JsonSerializer.Serialize(payload));
+                }
+                else if (cmd == "REPAIR_PORT_8080")
+                {
+                    RunElevatedFirewallAndAclHelper();
+                }
+                else if (cmd == "ROTATE_KEYS")
+                {
+                    RotatePairingTokens();
+                    var payload = new { type = "GATEWAY_INFO", data = BuildGatewaySnapshot(safeHost) };
+                    _webView.CoreWebView2.PostWebMessageAsJson(JsonSerializer.Serialize(payload));
+                }
+                else if (cmd == "SAVE_BRANCH")
+                {
+                    string code = doc.RootElement.TryGetProperty("branchCode", out var c) ? (c.GetString() ?? _branchCode) : _branchCode;
+                    string name = doc.RootElement.TryGetProperty("branchName", out var n) ? (n.GetString() ?? _branchName) : _branchName;
+                    SaveBranchConfig(code, name);
+                    var payload = new { type = "GATEWAY_INFO", data = BuildGatewaySnapshot(safeHost) };
+                    _webView.CoreWebView2.PostWebMessageAsJson(JsonSerializer.Serialize(payload));
+                }
+                else if (cmd == "PUSH_EVENT")
+                {
+                    if (doc.RootElement.TryGetProperty("event", out var evEl))
+                    {
+                        lock (_fileLock)
+                        {
+                            File.AppendAllText(_eventLogPath, evEl.GetRawText() + Environment.NewLine, Encoding.UTF8);
+                            CompactEventLogIfNeeded();
+                        }
+                    }
+                }
+                else if (cmd == "POLL_EVENTS")
+                {
+                    string[] lines;
+                    lock (_fileLock)
+                    {
+                        lines = File.Exists(_eventLogPath)
+                            ? File.ReadAllLines(_eventLogPath, Encoding.UTF8)
+                            : Array.Empty<string>();
+                    }
+                    string jsonArray = "[" + string.Join(",", lines.Where(l => !string.IsNullOrWhiteSpace(l)).TakeLast(1000)) + "]";
+                    _webView.CoreWebView2.PostWebMessageAsJson($"{{\"type\":\"EVENTS_BATCH\",\"data\":{jsonArray}}}");
+                }
+            }
+            catch { }
+        };
+    }
+
     private async Task InitWebViewAsync()
     {
         try
@@ -476,6 +621,8 @@ internal sealed class MainForm : Form
             _webView.CoreWebView2.Settings.IsStatusBarEnabled = false;
             _webView.CoreWebView2.Settings.AreDefaultContextMenusEnabled = true;
             _webView.CoreWebView2.Settings.IsZoomControlEnabled = true;
+
+            WireWebViewIpc();
 
             _webView.CoreWebView2.SetVirtualHostNameToFolderMapping(
                 "sseddume.local",
