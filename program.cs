@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.Drawing;
 using System.IO;
 using System.Linq;
@@ -18,7 +19,7 @@ namespace SseddumeDrugShop;
 
 internal static class Program
 {
-    private const string MutexName = @"Global\SseddumeDrugShop_WindowsCompanion_v1";
+    private const string MutexName = @"Global\SseddumeDrugShop_WindowsGateway_v3";
 
     [STAThread]
     private static void Main()
@@ -48,15 +49,18 @@ internal sealed class MainForm : Form
     private readonly string _eventLogPath;
     private readonly string _ownerTokenFile;
     private readonly string _staffTokenFile;
+    private readonly string _branchConfigFile;
     private string _ownerToken;
     private string _staffToken;
+    private string _branchCode = "LOC-MAIN";
+    private string _branchName = "MAIN BRANCH";
     private readonly int _port = 8080;
     private readonly object _fileLock = new();
     private string _activeLanIp = "127.0.0.1";
 
     public MainForm()
     {
-        Text = "SSEDDUME DRUG SHOP MANAGEMENT SYSTEM — Secure Terminal & Mobile POS Gateway";
+        Text = "SSEDDUME DRUG SHOP MANAGEMENT SYSTEM — Secure Terminal & Mobile POS Synchronization Gateway";
         Width = 1380;
         Height = 850;
         MinimumSize = new Size(1024, 680);
@@ -70,9 +74,11 @@ internal sealed class MainForm : Form
         _eventLogPath = Path.Combine(_appDataDir, "companion_events.jsonl");
         _ownerTokenFile = Path.Combine(_appDataDir, "owner_pair_token.txt");
         _staffTokenFile = Path.Combine(_appDataDir, "staff_pair_token.txt");
+        _branchConfigFile = Path.Combine(_appDataDir, "branch_config.json");
 
         _ownerToken = LoadOrCreateToken(_ownerTokenFile, "OWN-");
         _staffToken = LoadOrCreateToken(_staffTokenFile, "STF-");
+        LoadBranchConfig();
 
         _webView = new WebView2 { Dock = DockStyle.Fill };
         Controls.Add(_webView);
@@ -86,6 +92,46 @@ internal sealed class MainForm : Form
         {
             try { _listener?.Stop(); } catch { }
         };
+    }
+
+    private static string SanitizeTag(string raw, string fallback)
+    {
+        string cleaned = string.Concat(raw.Trim().ToUpperInvariant().Select(ch =>
+            char.IsLetterOrDigit(ch) || ch == '-' || ch == '_' ? ch : '-'));
+        while (cleaned.Contains("--", StringComparison.Ordinal))
+            cleaned = cleaned.Replace("--", "-", StringComparison.Ordinal);
+        cleaned = cleaned.Trim('-');
+        return string.IsNullOrEmpty(cleaned) ? fallback : cleaned[..Math.Min(cleaned.Length, 24)];
+    }
+
+    private void LoadBranchConfig()
+    {
+        try
+        {
+            if (File.Exists(_branchConfigFile))
+            {
+                using var doc = JsonDocument.Parse(File.ReadAllText(_branchConfigFile, Encoding.UTF8));
+                if (doc.RootElement.TryGetProperty("branchCode", out var c))
+                    _branchCode = SanitizeTag(c.GetString() ?? "LOC-MAIN", "LOC-MAIN");
+                if (doc.RootElement.TryGetProperty("branchName", out var n))
+                {
+                    string name = (n.GetString() ?? "MAIN BRANCH").Trim();
+                    if (!string.IsNullOrEmpty(name)) _branchName = name;
+                }
+            }
+        }
+        catch { }
+    }
+
+    private void SaveBranchConfig(string branchCode, string branchName)
+    {
+        lock (_fileLock)
+        {
+            _branchCode = SanitizeTag(branchCode, "LOC-MAIN");
+            _branchName = string.IsNullOrWhiteSpace(branchName) ? "MAIN BRANCH" : branchName.Trim();
+            string json = JsonSerializer.Serialize(new { branchCode = _branchCode, branchName = _branchName });
+            File.WriteAllText(_branchConfigFile, json, Encoding.UTF8);
+        }
     }
 
     private static string LoadOrCreateToken(string path, string prefix)
@@ -207,9 +253,7 @@ internal sealed class MainForm : Form
     private bool HasOwnerClearance(HttpListenerRequest req)
     {
         string? token = req.Headers["X-Pair-Token"];
-        if (string.Equals(token, _ownerToken, StringComparison.Ordinal)) return true;
-        // Local UI must also present the Owner token for /api/admin/* routes
-        return false;
+        return string.Equals(token, _ownerToken, StringComparison.Ordinal);
     }
 
     private bool HasOperationalClearance(HttpListenerRequest req)
@@ -218,6 +262,52 @@ internal sealed class MainForm : Form
         string? token = req.Headers["X-Pair-Token"];
         return string.Equals(token, _ownerToken, StringComparison.Ordinal) ||
                string.Equals(token, _staffToken, StringComparison.Ordinal);
+    }
+
+    private object BuildGatewaySnapshot(string safeHost)
+    {
+        string endpoint = $"http://{_activeLanIp}:{_port}";
+        return new
+        {
+            ok = true,
+            host = safeHost,
+            branchCode = _branchCode,
+            branchName = _branchName,
+            lanIp = _activeLanIp,
+            endpoint,
+            staffToken = _staffToken,
+            ownerToken = _ownerToken,
+            staffQrPayload = $"SSEDDUME-POS|STAFF|{_branchCode}|{safeHost}|{endpoint}|{_staffToken}",
+            ownerQrPayload = $"SSEDDUME-POS|OWNER|{_branchCode}|{safeHost}|{endpoint}|{_ownerToken}"
+        };
+    }
+
+    private void CompactEventLogIfNeeded()
+    {
+        if (!File.Exists(_eventLogPath)) return;
+        var lines = File.ReadAllLines(_eventLogPath, Encoding.UTF8)
+            .Where(l => !string.IsNullOrWhiteSpace(l))
+            .ToArray();
+        if (lines.Length <= 5000) return;
+
+        var seen = new HashSet<string>(StringComparer.Ordinal);
+        var kept = new List<string>(2500);
+        for (int i = lines.Length - 1; i >= 0 && kept.Count < 2500; i--)
+        {
+            try
+            {
+                using var doc = JsonDocument.Parse(lines[i]);
+                if (doc.RootElement.TryGetProperty("event_id", out var idEl))
+                {
+                    string id = idEl.GetString() ?? "";
+                    if (!string.IsNullOrEmpty(id) && !seen.Add(id)) continue;
+                }
+                kept.Add(lines[i]);
+            }
+            catch { }
+        }
+        kept.Reverse();
+        File.WriteAllLines(_eventLogPath, kept, Encoding.UTF8);
     }
 
     private async Task HandleHttpRequestAsync(HttpListenerContext ctx)
@@ -237,15 +327,10 @@ internal sealed class MainForm : Form
         string currentIp = DetectBestLanIp();
         if (currentIp != "127.0.0.1") EnsureLanPrefixBound(currentIp);
 
-        string safeHost = string.Concat(Environment.MachineName.Where(ch => char.IsLetterOrDigit(ch) || ch == '-'));
-        if (string.IsNullOrEmpty(safeHost)) safeHost = "Station";
-        string endpoint = $"http://{_activeLanIp}:{_port}";
-        string staffQrPayload = $"SSEDDUME-POS|STAFF|{safeHost}|{endpoint}|{_staffToken}";
-        string ownerQrPayload = $"SSEDDUME-POS|OWNER|{safeHost}|{endpoint}|{_ownerToken}";
+        string safeHost = SanitizeTag(Environment.MachineName, "STATION");
 
         try
         {
-            // Localhost workstation UI bootstrap endpoint
             if (path == "/api/gateway-info" && ctx.Request.HttpMethod == "GET")
             {
                 if (!ctx.Request.IsLocal)
@@ -253,22 +338,10 @@ internal sealed class MainForm : Form
                     await WriteJsonAsync(ctx.Response, 403, "{\"error\":\"Local workstation access only\"}");
                     return;
                 }
-                var info = new
-                {
-                    ok = true,
-                    host = safeHost,
-                    lanIp = _activeLanIp,
-                    endpoint,
-                    staffToken = _staffToken,
-                    ownerToken = _ownerToken,
-                    staffQrPayload,
-                    ownerQrPayload
-                };
-                await WriteJsonAsync(ctx.Response, 200, JsonSerializer.Serialize(info));
+                await WriteJsonAsync(ctx.Response, 200, JsonSerializer.Serialize(BuildGatewaySnapshot(safeHost)));
                 return;
             }
 
-            // Strictly protected /api/admin/* routes — requires Owner / Administrator clearance
             if (path.StartsWith("/api/admin/", StringComparison.OrdinalIgnoreCase))
             {
                 if (!HasOwnerClearance(ctx.Request))
@@ -280,16 +353,19 @@ internal sealed class MainForm : Form
                 if (path == "/api/admin/rotate-keys" && ctx.Request.HttpMethod == "POST")
                 {
                     RotatePairingTokens();
-                    string newEndpoint = $"http://{_activeLanIp}:{_port}";
-                    var rotated = new
-                    {
-                        ok = true,
-                        staffToken = _staffToken,
-                        ownerToken = _ownerToken,
-                        staffQrPayload = $"SSEDDUME-POS|STAFF|{safeHost}|{newEndpoint}|{_staffToken}",
-                        ownerQrPayload = $"SSEDDUME-POS|OWNER|{safeHost}|{newEndpoint}|{_ownerToken}"
-                    };
-                    await WriteJsonAsync(ctx.Response, 200, JsonSerializer.Serialize(rotated));
+                    await WriteJsonAsync(ctx.Response, 200, JsonSerializer.Serialize(BuildGatewaySnapshot(safeHost)));
+                    return;
+                }
+
+                if (path == "/api/admin/branch" && ctx.Request.HttpMethod == "POST")
+                {
+                    using var reader = new StreamReader(ctx.Request.InputStream, Encoding.UTF8);
+                    string body = await reader.ReadToEndAsync();
+                    using var doc = JsonDocument.Parse(body);
+                    string code = doc.RootElement.TryGetProperty("branchCode", out var c) ? (c.GetString() ?? _branchCode) : _branchCode;
+                    string name = doc.RootElement.TryGetProperty("branchName", out var n) ? (n.GetString() ?? _branchName) : _branchName;
+                    SaveBranchConfig(code, name);
+                    await WriteJsonAsync(ctx.Response, 200, JsonSerializer.Serialize(BuildGatewaySnapshot(safeHost)));
                     return;
                 }
 
@@ -311,7 +387,6 @@ internal sealed class MainForm : Form
                 return;
             }
 
-            // /api/events — Accessible to both Staff Terminals and Owner/Admin devices
             if (path == "/api/events")
             {
                 if (!HasOperationalClearance(ctx.Request))
@@ -338,6 +413,7 @@ internal sealed class MainForm : Form
                             {
                                 File.AppendAllText(_eventLogPath, doc.RootElement.GetRawText() + Environment.NewLine, Encoding.UTF8);
                             }
+                            CompactEventLogIfNeeded();
                         }
                     }
                     await WriteJsonAsync(ctx.Response, 200, "{\"ok\":true}");
@@ -353,7 +429,6 @@ internal sealed class MainForm : Form
                             ? File.ReadAllLines(_eventLogPath, Encoding.UTF8)
                             : Array.Empty<string>();
                     }
-                    // Strip sensitive audit-only entries for non-owner requests
                     bool isOwner = ctx.Request.IsLocal || string.Equals(ctx.Request.Headers["X-Pair-Token"], _ownerToken, StringComparison.Ordinal);
                     var filtered = lines
                         .Where(l => !string.IsNullOrWhiteSpace(l))
