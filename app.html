@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>SSEDDUME DRUG SHOP MANAGEMENT SYSTEM — Secure Terminal &amp; Mobile POS Synchronization Gateway</title>
+  <title>SSEDDUME DRUG SHOP MANAGEMENT SYSTEM — Universal Terminal &amp; POS Gateway</title>
   <style>
     :root {
       --bg: #e8eef5;
@@ -159,7 +159,7 @@
         <span id="hdrTitle">SSEDDUME DRUG SHOP MANAGEMENT SYSTEM</span>
         <span class="branch-tag" id="hdrBranchTag">MAIN BRANCH (LOC-MAIN)</span>
       </div>
-      <div class="win-sub" id="hdrSub">Secure Terminal &amp; Mobile POS Synchronization Gateway</div>
+      <div class="win-sub" id="hdrSub">Universal Terminal &amp; POS Gateway</div>
     </div>
     <div class="row" style="margin:0;">
       <span class="pill" id="syncStatusPill"><span class="sync-dot" id="syncDot"></span><span id="syncText">Gateway Ready</span></span>
@@ -198,10 +198,10 @@
   </div>
 
 <script>
-const BASE_STORAGE_KEY = "sseddume_gateway_db_v4";
-const BASE_SNAP_KEY = "sseddume_gateway_snap_v4";
-const CLOUD_CFG_KEY = "sseddume_gateway_cloud_cfg_v4";
-const DEV_ID_KEY = "sseddume_gateway_dev_id_v4";
+const BASE_STORAGE_KEY = "sseddume_gateway_db_v5";
+const BASE_SNAP_KEY = "sseddume_gateway_snap_v5";
+const CLOUD_CFG_KEY = "sseddume_gateway_cloud_cfg_v5";
+const DEV_ID_KEY = "sseddume_gateway_dev_id_v5";
 
 const ROLE_CAPS = {
   Owner: ["dispense", "grn", "meds", "stock_adjust", "void_sale", "settle_credit", "reports", "audit_full", "admin", "pairing", "staff"],
@@ -214,6 +214,7 @@ let gatewayInfo = {
   branchCode: "LOC-MAIN",
   branchName: "MAIN BRANCH",
   lanIp: "127.0.0.1",
+  lanIps: [],
   endpoint: "http://127.0.0.1:8080",
   staffToken: "",
   ownerToken: "",
@@ -221,12 +222,8 @@ let gatewayInfo = {
   ownerQrPayload: ""
 };
 
-function storageKeyForBranch() {
-  return `${BASE_STORAGE_KEY}_${gatewayInfo.branchCode || "LOC-MAIN"}`;
-}
-function snapKeyForBranch() {
-  return `${BASE_SNAP_KEY}_${gatewayInfo.branchCode || "LOC-MAIN"}`;
-}
+function storageKeyForBranch() { return `${BASE_STORAGE_KEY}_${gatewayInfo.branchCode || "LOC-MAIN"}`; }
+function snapKeyForBranch() { return `${BASE_SNAP_KEY}_${gatewayInfo.branchCode || "LOC-MAIN"}`; }
 
 function getDevId() {
   let id = localStorage.getItem(DEV_ID_KEY);
@@ -236,28 +233,12 @@ function getDevId() {
   }
   return id;
 }
-function money(n) {
-  const x = Number(n);
-  return Number.isFinite(x) ? Math.round((x + Number.EPSILON) * 100) / 100 : 0;
-}
-function todayStr() {
-  const d = new Date();
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
-}
-function addDaysStr(days) {
-  const d = new Date();
-  d.setDate(d.getDate() + days);
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
-}
-function daysUntil(dateStr) {
-  const a = new Date(`${todayStr()}T00:00:00`).getTime();
-  const b = new Date(`${dateStr}T00:00:00`).getTime();
-  return Math.round((b - a) / 86400000);
-}
+function money(n) { const x = Number(n); return Number.isFinite(x) ? Math.round((x + Number.EPSILON) * 100) / 100 : 0; }
+function todayStr() { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`; }
+function addDaysStr(days) { const d = new Date(); d.setDate(d.getDate() + days); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`; }
+function daysUntil(dateStr) { return Math.round((new Date(`${dateStr}T00:00:00`).getTime() - new Date(`${todayStr()}T00:00:00`).getTime()) / 86400000); }
 function nowIso() { return new Date().toISOString(); }
-function esc(s) {
-  return String(s ?? "").replace(/[&<>"']/g, c => ({ "&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;" }[c]));
-}
+function esc(s) { return String(s ?? "").replace(/[&<>"']/g, c => ({ "&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;" }[c])); }
 function checksum(obj) {
   const str = JSON.stringify(obj);
   let h1 = 0x811c9dc5, h2 = 0x01000193;
@@ -278,47 +259,34 @@ function toast(msg) {
   toastTimer = setTimeout(() => el.classList.remove("show"), 2600);
 }
 
-/* ==================== 100% OFFLINE ISO/IEC 18004 QR CODE ENGINE (VERSIONS 1-10, ECC-L) ==================== */
+/* ==================== 100% OFFLINE ISO/IEC 18004 QR ENGINE ==================== */
 const IsoQrEngine = (() => {
   const SPECS = {
-    1:  { n: 21,  data: 19,  ec: 7,  g1: 1, g2: 0, align: [] },
-    2:  { n: 25,  data: 34,  ec: 10, g1: 1, g2: 0, align: [6, 18] },
-    3:  { n: 29,  data: 55,  ec: 15, g1: 1, g2: 0, align: [6, 22] },
-    4:  { n: 33,  data: 80,  ec: 20, g1: 1, g2: 0, align: [6, 26] },
-    5:  { n: 37,  data: 108, ec: 26, g1: 1, g2: 0, align: [6, 30] },
-    6:  { n: 41,  data: 136, ec: 18, g1: 2, g2: 0, align: [6, 34] },
-    7:  { n: 45,  data: 156, ec: 20, g1: 2, g2: 0, align: [6, 22, 38] },
-    8:  { n: 49,  data: 194, ec: 24, g1: 2, g2: 0, align: [6, 24, 42] },
-    9:  { n: 53,  data: 232, ec: 30, g1: 2, g2: 0, align: [6, 26, 46] },
-    10: { n: 57,  data: 274, ec: 18, g1: 2, g2: 2, align: [6, 28, 50] }
+    1: { n: 21, data: 19, ec: 7, g1: 1, g2: 0, align: [] },
+    2: { n: 25, data: 34, ec: 10, g1: 1, g2: 0, align: [6, 18] },
+    3: { n: 29, data: 55, ec: 15, g1: 1, g2: 0, align: [6, 22] },
+    4: { n: 33, data: 80, ec: 20, g1: 1, g2: 0, align: [6, 26] },
+    5: { n: 37, data: 108, ec: 26, g1: 1, g2: 0, align: [6, 30] },
+    6: { n: 41, data: 136, ec: 18, g1: 2, g2: 0, align: [6, 34] },
+    7: { n: 45, data: 156, ec: 20, g1: 2, g2: 0, align: [6, 22, 38] },
+    8: { n: 49, data: 194, ec: 24, g1: 2, g2: 0, align: [6, 24, 42] },
+    9: { n: 53, data: 232, ec: 30, g1: 2, g2: 0, align: [6, 26, 46] },
+    10: { n: 57, data: 274, ec: 18, g1: 2, g2: 2, align: [6, 28, 50] }
   };
-
   const FORMAT_INFO = [0x77c4, 0x72f3, 0x7daa, 0x789d, 0x662f, 0x6318, 0x6c41, 0x6976];
   const VERSION_INFO = { 7: 0x07c94, 8: 0x085bc, 9: 0x09a99, 10: 0x0a4d3 };
-
   const GF_EXP = new Uint8Array(512);
   const GF_LOG = new Uint8Array(256);
   let x = 1;
-  for (let i = 0; i < 255; i++) {
-    GF_EXP[i] = x;
-    GF_LOG[x] = i;
-    x <<= 1;
-    if (x & 0x100) x ^= 0x11d;
-  }
+  for (let i = 0; i < 255; i++) { GF_EXP[i] = x; GF_LOG[x] = i; x <<= 1; if (x & 0x100) x ^= 0x11d; }
   for (let i = 255; i < 512; i++) GF_EXP[i] = GF_EXP[i - 255];
-
-  function gfMul(a, b) {
-    return (a === 0 || b === 0) ? 0 : GF_EXP[GF_LOG[a] + GF_LOG[b]];
-  }
+  function gfMul(a, b) { return (a === 0 || b === 0) ? 0 : GF_EXP[GF_LOG[a] + GF_LOG[b]]; }
   function rsGenerator(ecLen) {
     let poly = [1];
     for (let i = 0; i < ecLen; i++) {
       const next = new Array(poly.length + 1).fill(0);
       const factor = GF_EXP[i];
-      for (let j = 0; j < poly.length; j++) {
-        next[j] ^= poly[j];
-        next[j + 1] ^= gfMul(poly[j], factor);
-      }
+      for (let j = 0; j < poly.length; j++) { next[j] ^= poly[j]; next[j + 1] ^= gfMul(poly[j], factor); }
       poly = next;
     }
     return poly;
@@ -330,22 +298,17 @@ const IsoQrEngine = (() => {
       const factor = block[i] ^ ecc[0];
       ecc.copyWithin(0, 1);
       ecc[ecLen - 1] = 0;
-      if (factor !== 0) {
-        for (let j = 0; j < ecLen; j++) ecc[j] ^= gfMul(gen[j + 1], factor);
-      }
+      if (factor !== 0) for (let j = 0; j < ecLen; j++) ecc[j] ^= gfMul(gen[j + 1], factor);
     }
     return ecc;
   }
-
   function pickVersion(byteLen) {
     for (let v = 1; v <= 10; v++) {
       const ccBits = v <= 9 ? 8 : 16;
-      const maxBytes = Math.floor((SPECS[v].data * 8 - 4 - ccBits) / 8);
-      if (byteLen <= maxBytes) return v;
+      if (byteLen <= Math.floor((SPECS[v].data * 8 - 4 - ccBits) / 8)) return v;
     }
     return 10;
   }
-
   function applyMask(r, c, maskId) {
     switch (maskId) {
       case 0: return (r + c) % 2 === 0;
@@ -359,7 +322,6 @@ const IsoQrEngine = (() => {
       default: return false;
     }
   }
-
   function penaltyScore(grid, n) {
     let score = 0;
     for (let r = 0; r < n; r++) {
@@ -378,251 +340,109 @@ const IsoQrEngine = (() => {
       }
       if (run >= 5) score += 3 + (run - 5);
     }
-    for (let r = 0; r < n - 1; r++) {
-      for (let c = 0; c < n - 1; c++) {
-        const v = grid[r][c];
-        if (v === grid[r][c + 1] && v === grid[r + 1][c] && v === grid[r + 1][c + 1]) score += 3;
-      }
-    }
     return score;
   }
-
   function buildBaseMatrix(ver, stream) {
-    const spec = SPECS[ver];
-    const n = spec.n;
+    const spec = SPECS[ver], n = spec.n;
     const mod = Array.from({ length: n }, () => Array(n).fill(0));
     const isFunc = Array.from({ length: n }, () => Array(n).fill(false));
-
-    const setFunc = (r, c, dark) => {
-      if (r >= 0 && r < n && c >= 0 && c < n) {
-        mod[r][c] = dark ? 1 : 0;
-        isFunc[r][c] = true;
-      }
-    };
-
+    const setFunc = (r, c, dark) => { if (r >= 0 && r < n && c >= 0 && c < n) { mod[r][c] = dark ? 1 : 0; isFunc[r][c] = true; } };
     const drawFinder = (r0, c0) => {
-      for (let r = -1; r <= 7; r++) {
-        for (let c = -1; c <= 7; c++) {
-          const dark = r >= 0 && r <= 6 && c >= 0 && c <= 6 &&
-            (r === 0 || r === 6 || c === 0 || c === 6 || (r >= 2 && r <= 4 && c >= 2 && c <= 4));
-          setFunc(r0 + r, c0 + c, dark);
-        }
+      for (let r = -1; r <= 7; r++) for (let c = -1; c <= 7; c++) {
+        setFunc(r0 + r, c0 + c, r >= 0 && r <= 6 && c >= 0 && c <= 6 && (r === 0 || r === 6 || c === 0 || c === 6 || (r >= 2 && r <= 4 && c >= 2 && c <= 4)));
       }
     };
-
-    drawFinder(0, 0);
-    drawFinder(0, n - 7);
-    drawFinder(n - 7, 0);
-
-    const centers = spec.align;
-    for (let i = 0; i < centers.length; i++) {
-      for (let j = 0; j < centers.length; j++) {
-        const r0 = centers[i], c0 = centers[j];
-        const overlapsFinder = (r0 < 9 && c0 < 9) || (r0 < 9 && c0 > n - 10) || (r0 > n - 10 && c0 < 9);
-        if (overlapsFinder) continue;
-        for (let r = -2; r <= 2; r++) {
-          for (let c = -2; c <= 2; c++) {
-            const dark = Math.abs(r) === 2 || Math.abs(c) === 2 || (r === 0 && c === 0);
-            setFunc(r0 + r, c0 + c, dark);
-          }
-        }
-      }
+    drawFinder(0, 0); drawFinder(0, n - 7); drawFinder(n - 7, 0);
+    for (const r0 of spec.align) for (const c0 of spec.align) {
+      if ((r0 < 9 && c0 < 9) || (r0 < 9 && c0 > n - 10) || (r0 > n - 10 && c0 < 9)) continue;
+      for (let r = -2; r <= 2; r++) for (let c = -2; c <= 2; c++) setFunc(r0 + r, c0 + c, Math.abs(r) === 2 || Math.abs(c) === 2 || (r === 0 && c === 0));
     }
-
-    for (let i = 8; i < n - 8; i++) {
-      setFunc(6, i, i % 2 === 0);
-      setFunc(i, 6, i % 2 === 0);
-    }
-
+    for (let i = 8; i < n - 8; i++) { setFunc(6, i, i % 2 === 0); setFunc(i, 6, i % 2 === 0); }
     setFunc(n - 8, 8, true);
-
-    for (let i = 0; i < 9; i++) {
-      if (i !== 6) {
-        isFunc[8][i] = true;
-        isFunc[i][8] = true;
-      }
-    }
-    for (let i = 0; i < 8; i++) {
-      isFunc[8][n - 1 - i] = true;
-      isFunc[n - 1 - i][8] = true;
-    }
-
-    if (ver >= 7) {
-      for (let i = 0; i < 6; i++) {
-        for (let j = 0; j < 3; j++) {
-          isFunc[i][n - 11 + j] = true;
-          isFunc[n - 11 + j][i] = true;
-        }
-      }
-    }
-
-    let bitPos = 0;
-    let goingUp = true;
+    for (let i = 0; i < 9; i++) if (i !== 6) { isFunc[8][i] = true; isFunc[i][8] = true; }
+    for (let i = 0; i < 8; i++) { isFunc[8][n - 1 - i] = true; isFunc[n - 1 - i][8] = true; }
+    if (ver >= 7) for (let i = 0; i < 6; i++) for (let j = 0; j < 3; j++) { isFunc[i][n - 11 + j] = true; isFunc[n - 11 + j][i] = true; }
+    let bitPos = 0, goingUp = true;
     for (let col = n - 1; col >= 1; col -= 2) {
       if (col === 6) col = 5;
       for (let step = 0; step < n; step++) {
         const r = goingUp ? (n - 1 - step) : step;
         for (let offset = 0; offset < 2; offset++) {
           const c = col - offset;
-          if (!isFunc[r][c]) {
-            mod[r][c] = bitPos < stream.length ? stream[bitPos++] : 0;
-          }
+          if (!isFunc[r][c]) mod[r][c] = bitPos < stream.length ? stream[bitPos++] : 0;
         }
       }
       goingUp = !goingUp;
     }
-
     return { mod, isFunc, n };
   }
-
   function stampMetadata(grid, ver, maskId) {
-    const n = grid.length;
-    const fmt = FORMAT_INFO[maskId];
-    const fmtBits = [];
+    const n = grid.length, fmt = FORMAT_INFO[maskId], fmtBits = [];
     for (let i = 14; i >= 0; i--) fmtBits.push((fmt >> i) & 1);
-
     const hCoords = [[8,0],[8,1],[8,2],[8,3],[8,4],[8,5],[8,7],[8,8],[7,8],[5,8],[4,8],[3,8],[2,8],[1,8],[0,8]];
     const vCoords = [[n-1,8],[n-2,8],[n-3,8],[n-4,8],[n-5,8],[n-6,8],[n-7,8],[8,n-8],[8,n-7],[8,n-6],[8,n-5],[8,n-4],[8,n-3],[8,n-2],[8,n-1]];
-
-    for (let i = 0; i < 15; i++) {
-      grid[hCoords[i][0]][hCoords[i][1]] = fmtBits[i];
-      grid[vCoords[i][0]][vCoords[i][1]] = fmtBits[i];
-    }
-
+    for (let i = 0; i < 15; i++) { grid[hCoords[i][0]][hCoords[i][1]] = fmtBits[i]; grid[vCoords[i][0]][vCoords[i][1]] = fmtBits[i]; }
     if (ver >= 7 && VERSION_INFO[ver]) {
       const vBits = VERSION_INFO[ver];
       for (let i = 0; i < 18; i++) {
-        const bit = (vBits >> i) & 1;
-        const r = Math.floor(i / 3);
-        const c = n - 11 + (i % 3);
-        grid[r][c] = bit;
-        grid[c][r] = bit;
+        const bit = (vBits >> i) & 1, r = Math.floor(i / 3), c = n - 11 + (i % 3);
+        grid[r][c] = bit; grid[c][r] = bit;
       }
     }
   }
-
   function encodeSvg(text, pxSize = 188) {
-    const encoder = new TextEncoder();
-    let bytes = encoder.encode(String(text || "SSEDDUME"));
+    let bytes = new TextEncoder().encode(String(text || "SSEDDUME"));
     const maxAllowed = Math.floor((SPECS[10].data * 8 - 4 - 16) / 8);
     if (bytes.length > maxAllowed) bytes = bytes.slice(0, maxAllowed);
-
-    const ver = pickVersion(bytes.length);
-    const spec = SPECS[ver];
-    const ccBits = ver <= 9 ? 8 : 16;
-    const bits = [];
-    const pushBits = (val, len) => {
-      for (let i = len - 1; i >= 0; i--) bits.push((val >> i) & 1);
-    };
-
-    pushBits(0b0100, 4);
-    pushBits(bytes.length, ccBits);
+    const ver = pickVersion(bytes.length), spec = SPECS[ver], ccBits = ver <= 9 ? 8 : 16, bits = [];
+    const pushBits = (val, len) => { for (let i = len - 1; i >= 0; i--) bits.push((val >> i) & 1); };
+    pushBits(0b0100, 4); pushBits(bytes.length, ccBits);
     for (let i = 0; i < bytes.length; i++) pushBits(bytes[i], 8);
-
-    const totalDataBits = spec.data * 8;
-    pushBits(0, Math.min(4, totalDataBits - bits.length));
+    pushBits(0, Math.min(4, spec.data * 8 - bits.length));
     while (bits.length % 8 !== 0) bits.push(0);
-
     const dataCodewords = [];
-    for (let i = 0; i < bits.length; i += 8) {
-      let cw = 0;
-      for (let b = 0; b < 8; b++) cw = (cw << 1) | bits[i + b];
-      dataCodewords.push(cw);
-    }
-
-    const padBytes = [0xec, 0x11];
-    let padIdx = 0;
-    while (dataCodewords.length < spec.data) {
-      dataCodewords.push(padBytes[padIdx++ % 2]);
-    }
-
-    const blocksData = [];
-    const blocksEc = [];
-    let cursor = 0;
-    const totalBlocks = spec.g1 + spec.g2;
-    const shortBlockLen = Math.floor(spec.data / totalBlocks);
-
+    for (let i = 0; i < bits.length; i += 8) { let cw = 0; for (let b = 0; b < 8; b++) cw = (cw << 1) | bits[i + b]; dataCodewords.push(cw); }
+    const padBytes = [0xec, 0x11]; let padIdx = 0;
+    while (dataCodewords.length < spec.data) dataCodewords.push(padBytes[padIdx++ % 2]);
+    const blocksData = [], blocksEc = []; let cursor = 0;
+    const totalBlocks = spec.g1 + spec.g2, shortBlockLen = Math.floor(spec.data / totalBlocks);
     for (let b = 0; b < totalBlocks; b++) {
       const len = b < spec.g1 ? shortBlockLen : (shortBlockLen + 1);
-      const blk = dataCodewords.slice(cursor, cursor + len);
-      cursor += len;
-      blocksData.push(blk);
-      blocksEc.push(rsEncodeBlock(blk, spec.ec));
+      const blk = dataCodewords.slice(cursor, cursor + len); cursor += len;
+      blocksData.push(blk); blocksEc.push(rsEncodeBlock(blk, spec.ec));
     }
-
-    const finalCodewords = [];
-    const maxDataLen = Math.max(...blocksData.map(x => x.length));
-    for (let i = 0; i < maxDataLen; i++) {
-      for (let b = 0; b < blocksData.length; b++) {
-        if (i < blocksData[b].length) finalCodewords.push(blocksData[b][i]);
-      }
-    }
-    for (let i = 0; i < spec.ec; i++) {
-      for (let b = 0; b < blocksEc.length; b++) {
-        finalCodewords.push(blocksEc[b][i]);
-      }
-    }
-
+    const finalCodewords = [], maxDataLen = Math.max(...blocksData.map(x => x.length));
+    for (let i = 0; i < maxDataLen; i++) for (let b = 0; b < blocksData.length; b++) if (i < blocksData[b].length) finalCodewords.push(blocksData[b][i]);
+    for (let i = 0; i < spec.ec; i++) for (let b = 0; b < blocksEc.length; b++) finalCodewords.push(blocksEc[b][i]);
     const stream = [];
-    for (const cw of finalCodewords) {
-      for (let b = 7; b >= 0; b--) stream.push((cw >> b) & 1);
-    }
-
+    for (const cw of finalCodewords) for (let b = 7; b >= 0; b--) stream.push((cw >> b) & 1);
     const { mod, isFunc, n } = buildBaseMatrix(ver, stream);
-
-    let bestGrid = null;
-    let bestScore = Infinity;
+    let bestGrid = null, bestScore = Infinity;
     for (let m = 0; m < 8; m++) {
       const candidate = mod.map((row, r) => row.map((val, c) => isFunc[r][c] ? val : (val ^ (applyMask(r, c, m) ? 1 : 0))));
       stampMetadata(candidate, ver, m);
       const sc = penaltyScore(candidate, n);
-      if (sc < bestScore) {
-        bestScore = sc;
-        bestGrid = candidate;
-      }
+      if (sc < bestScore) { bestScore = sc; bestGrid = candidate; }
     }
-
-    const quietZone = 4;
-    const cell = pxSize / (n + quietZone * 2);
+    const quietZone = 4, cell = pxSize / (n + quietZone * 2);
     let rects = "";
-    for (let r = 0; r < n; r++) {
-      for (let c = 0; c < n; c++) {
-        if (bestGrid[r][c]) {
-          const x0 = ((c + quietZone) * cell).toFixed(2);
-          const y0 = ((r + quietZone) * cell).toFixed(2);
-          const w0 = (cell + 0.14).toFixed(2);
-          rects += `<rect x="${x0}" y="${y0}" width="${w0}" height="${w0}" fill="#0f172a"/>`;
-        }
-      }
+    for (let r = 0; r < n; r++) for (let c = 0; c < n; c++) if (bestGrid[r][c]) {
+      rects += `<rect x="${((c + quietZone) * cell).toFixed(2)}" y="${((r + quietZone) * cell).toFixed(2)}" width="${(cell + 0.14).toFixed(2)}" height="${(cell + 0.14).toFixed(2)}" fill="#0f172a"/>`;
     }
     return `<svg width="${pxSize}" height="${pxSize}" viewBox="0 0 ${pxSize} ${pxSize}" shape-rendering="crispEdges" xmlns="http://www.w3.org/2000/svg"><rect width="${pxSize}" height="${pxSize}" fill="#ffffff"/>${rects}</svg>`;
   }
-
   return { encodeSvg };
 })();
 
 function defaultDb() {
   return {
-    shop: {
-      name: "SSEDDUME DRUG SHOP MANAGEMENT SYSTEM",
-      branchCode: gatewayInfo.branchCode || "LOC-MAIN",
-      branchName: gatewayInfo.branchName || "MAIN BRANCH",
-      nda: "",
-      lg: "",
-      currency: "UGX"
-    },
+    shop: { name: "SSEDDUME DRUG SHOP MANAGEMENT SYSTEM", branchCode: gatewayInfo.branchCode || "LOC-MAIN", branchName: gatewayInfo.branchName || "MAIN BRANCH", nda: "", lg: "", currency: "UGX" },
     staff: [
       { id: "U-OWNER", name: "Owner / Administrator", role: "Owner", regNo: "NDA-OWN-01", pin: "0000", active: true },
       { id: "U-MGR", name: "In-Charge Pharmacist", role: "In-Charge", regNo: "NDA-IC-01", pin: "1111", active: true },
       { id: "U-DISP", name: "Dispensing Staff", role: "Dispenser", regNo: "NDA-DSP-01", pin: "", active: true }
     ],
-    medicines: [],
-    batches: [],
-    sales: [],
-    credits: [],
-    audit: [],
-    appliedEvents: [],
-    syncOutbox: []
+    medicines: [], batches: [], sales: [], credits: [], audit: [], appliedEvents: [], syncOutbox: []
   };
 }
 
@@ -630,11 +450,9 @@ function loadDb() {
   try {
     const raw = localStorage.getItem(storageKeyForBranch());
     if (!raw) return defaultDb();
-    const p = JSON.parse(raw);
-    const d = defaultDb();
+    const p = JSON.parse(raw), d = defaultDb();
     return {
-      ...d,
-      ...p,
+      ...d, ...p,
       shop: { ...d.shop, ...(p.shop || {}) },
       staff: Array.isArray(p.staff) && p.staff.length ? p.staff : d.staff,
       medicines: Array.isArray(p.medicines) ? p.medicines : [],
@@ -645,9 +463,7 @@ function loadDb() {
       appliedEvents: Array.isArray(p.appliedEvents) ? p.appliedEvents : [],
       syncOutbox: Array.isArray(p.syncOutbox) ? p.syncOutbox : []
     };
-  } catch (_) {
-    return defaultDb();
-  }
+  } catch (_) { return defaultDb(); }
 }
 
 let db = defaultDb();
@@ -673,51 +489,61 @@ function saveDb() {
 }
 
 function addAudit(action, detail) {
-  const entry = {
-    time: nowIso(),
-    branchCode: gatewayInfo.branchCode || db.shop.branchCode || "LOC-MAIN",
-    user: currentOperator ? `${currentOperator.name} (${currentOperator.role})` : "Workstation",
-    action,
-    detail
-  };
+  const entry = { time: nowIso(), branchCode: gatewayInfo.branchCode || db.shop.branchCode || "LOC-MAIN", user: `${currentOperator.name} (${currentOperator.role})`, action, detail };
   db.audit.unshift(entry);
   return entry;
 }
 
-/* ==================== BRANCH-SCOPED IDEMPOTENT EVENT STREAMING ==================== */
+/* ==================== NATIVE WEBVIEW2 IPC BRIDGE ==================== */
+function postNativeCmd(payload) {
+  if (window.chrome && window.chrome.webview && typeof window.chrome.webview.postMessage === "function") {
+    window.chrome.webview.postMessage(payload);
+    return true;
+  }
+  return false;
+}
+
+if (window.chrome && window.chrome.webview) {
+  window.chrome.webview.addEventListener("message", (ev) => {
+    const msg = ev.data || {};
+    if (msg.type === "GATEWAY_INFO" && msg.data) {
+      const prevCode = gatewayInfo.branchCode;
+      gatewayInfo = { ...gatewayInfo, ...msg.data };
+      if (prevCode && gatewayInfo.branchCode && prevCode !== gatewayInfo.branchCode) {
+        db = loadDb();
+        currentOperator = db.staff.find(s => s.active !== false) || db.staff[0];
+      }
+      db.shop.branchCode = gatewayInfo.branchCode;
+      db.shop.branchName = gatewayInfo.branchName;
+      saveDb();
+      renderTopbar();
+      if (activeTab === "admin") render();
+    } else if (msg.type === "EVENTS_BATCH" && Array.isArray(msg.data)) {
+      let changed = false;
+      for (const item of msg.data) {
+        if (applyIncomingEvent(item)) changed = true;
+      }
+      if (changed) { saveDb(); render(); toast("Synchronized POS & scan events"); }
+    }
+  });
+}
+
 function emitEvent(eventType, payload) {
-  db.appliedEvents = Array.isArray(db.appliedEvents) ? db.appliedEvents : [];
-  db.syncOutbox = Array.isArray(db.syncOutbox) ? db.syncOutbox : [];
   const bCode = gatewayInfo.branchCode || db.shop.branchCode || "LOC-MAIN";
   const eventId = `${bCode}-${getDevId()}-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
   db.appliedEvents.push(eventId);
   if (db.appliedEvents.length > 8000) db.appliedEvents = db.appliedEvents.slice(-8000);
-
-  const cfg = getCloudCfg();
-  const ev = {
-    event_id: eventId,
-    branch_id: bCode,
-    branch_name: gatewayInfo.branchName || db.shop.branchName || "MAIN BRANCH",
-    shop_id: cfg.shopId || bCode,
-    device_id: getDevId(),
-    event_type: eventType,
-    payload
-  };
+  const ev = { event_id: eventId, branch_id: bCode, branch_name: gatewayInfo.branchName || db.shop.branchName || "MAIN BRANCH", device_id: getDevId(), event_type: eventType, payload };
   db.syncOutbox.push(ev);
-  pushEventToGateway(ev);
-  flushCloudOutbox();
+  postNativeCmd({ cmd: "PUSH_EVENT", event: ev });
 }
 
 function applyIncomingEvent(ev) {
   if (!ev || !ev.event_id) return false;
   const localBranch = gatewayInfo.branchCode || db.shop.branchCode || "LOC-MAIN";
   if (ev.branch_id && ev.branch_id !== localBranch) return false;
-
-  db.appliedEvents = Array.isArray(db.appliedEvents) ? db.appliedEvents : [];
   if (db.appliedEvents.includes(ev.event_id)) return false;
   db.appliedEvents.push(ev.event_id);
-  if (db.appliedEvents.length > 8000) db.appliedEvents = db.appliedEvents.slice(-8000);
-
   const p = ev.payload || {};
   if (ev.event_type === "MED_UPSERT" && p.med) {
     const idx = db.medicines.findIndex(m => m.id === p.med.id);
@@ -744,235 +570,91 @@ function applyIncomingEvent(ev) {
     const idx = db.credits.findIndex(c => c.id === p.credit.id);
     if (idx >= 0) Object.assign(db.credits[idx], p.credit);
     else db.credits.unshift(p.credit);
-  } else if (ev.event_type === "AUDIT_NOTE" && p.entry && canDo("audit_full")) {
-    db.audit.unshift(p.entry);
   }
   return true;
 }
 
-async function fetchWithTimeout(url, opts = {}, ms = 7000) {
-  const ctrl = new AbortController();
-  const t = setTimeout(() => ctrl.abort(), ms);
-  try {
-    return await fetch(url, { ...opts, signal: ctrl.signal });
-  } finally {
-    clearTimeout(t);
+function getActiveQrPayload() {
+  const bCode = gatewayInfo.branchCode || db.shop.branchCode || "LOC-MAIN";
+  const ep = gatewayInfo.endpoint || "http://127.0.0.1:8080";
+  const host = gatewayInfo.host || "STATION";
+  if (activePairingMode === "OWNER") {
+    return gatewayInfo.ownerQrPayload || `SSEDDUME-POS|OWNER|${bCode}|${host}|${ep}|${gatewayInfo.ownerToken || "OWN-LOCAL"}`;
+  }
+  return gatewayInfo.staffQrPayload || `SSEDDUME-POS|STAFF|${bCode}|${host}|${ep}|${gatewayInfo.staffToken || "STF-LOCAL"}`;
+}
+
+function fallbackCopyText(text) {
+  const ta = document.createElement("textarea");
+  ta.value = text;
+  ta.style.position = "fixed";
+  ta.style.opacity = "0";
+  document.body.appendChild(ta);
+  ta.select();
+  try { document.execCommand("copy"); } catch (_) {}
+  document.body.removeChild(ta);
+}
+
+function copyPairPayload() {
+  const str = getActiveQrPayload();
+  if (!str) return;
+  if (navigator.clipboard && navigator.clipboard.writeText) {
+    navigator.clipboard.writeText(str).catch(() => fallbackCopyText(str));
+  } else {
+    fallbackCopyText(str);
+  }
+  toast("Pairing payload copied");
+}
+
+function syncGatewayNow() {
+  postNativeCmd({ cmd: "GET_GATEWAY_INFO" });
+  postNativeCmd({ cmd: "POLL_EVENTS" });
+  renderTopbar();
+  render();
+  toast("Refreshed LAN & Sync");
+}
+
+function repairWindowsPort8080() {
+  if (!guardAction("admin", "repairing Windows port 8080 & firewall")) return;
+  if (!postNativeCmd({ cmd: "REPAIR_PORT_8080" })) {
+    alert("Run in Administrator Command Prompt:\nnetsh http add urlacl url=http://+:8080/ user=Everyone");
+  } else {
+    toast("Requested Windows firewall & port 8080 setup");
   }
 }
 
-async function pushEventToGateway(ev) {
-  try {
-    const headers = { "Content-Type": "application/json" };
-    if (gatewayInfo.ownerToken) headers["X-Pair-Token"] = gatewayInfo.ownerToken;
-    await fetchWithTimeout("http://127.0.0.1:8080/api/events", {
-      method: "POST",
-      headers,
-      body: JSON.stringify(ev)
-    }, 3000);
-  } catch (_) {}
-}
-
-async function pollGatewayEvents() {
-  try {
-    const headers = {};
-    if (gatewayInfo.ownerToken) headers["X-Pair-Token"] = gatewayInfo.ownerToken;
-    const res = await fetchWithTimeout("http://127.0.0.1:8080/api/events", { headers, cache: "no-store" }, 3000);
-    if (!res.ok) return;
-    const list = await res.json();
-    if (!Array.isArray(list)) return;
-    let changed = false;
-    for (const ev of list) {
-      if (applyIncomingEvent(ev)) changed = true;
-    }
-    if (changed) {
-      saveDb();
-      render();
-      toast("Synchronized POS & scan events from gateway");
-    }
-  } catch (_) {}
-}
-
-async function rotateGatewayKeys() {
+function rotateGatewayKeys() {
   if (!guardAction("pairing", "rotating station pairing credentials")) return;
-  try {
-    const res = await fetchWithTimeout("http://127.0.0.1:8080/api/admin/rotate-keys", {
-      method: "POST",
-      headers: { "X-Pair-Token": gatewayInfo.ownerToken || "" }
-    }, 4000);
-    if (!res.ok) return alert("Unable to rotate keys: Owner / Administrator token verification failed.");
-    const data = await res.json();
-    gatewayInfo = { ...gatewayInfo, ...data };
-    addAudit("KEY_ROTATION", "Rotated Staff and Owner / Administrator pairing keys");
-    saveDb();
-    render();
-    toast("Pairing credentials rotated");
-  } catch (err) {
-    alert("Key rotation failed: " + (err?.message || err));
-  }
+  postNativeCmd({ cmd: "ROTATE_KEYS" });
+  addAudit("KEY_ROTATION", "Rotated Staff and Owner / Administrator pairing keys");
+  saveDb();
+  toast("Pairing credentials rotated");
 }
 
-async function saveBranchIdentity() {
+function saveBranchIdentity() {
   if (!guardAction("admin", "updating branch / location identity")) return;
   const nextName = (document.getElementById("bName")?.value || "").trim();
   const nextCode = (document.getElementById("bCode")?.value || "").trim().toUpperCase();
   if (!nextName || !nextCode) return alert("Both Location Name and Location Code are required.");
-
-  const prevCode = gatewayInfo.branchCode || "LOC-MAIN";
-  try {
-    const res = await fetchWithTimeout("http://127.0.0.1:8080/api/admin/branch", {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        "X-Pair-Token": gatewayInfo.ownerToken || ""
-      },
-      body: JSON.stringify({ branchCode: nextCode, branchName: nextName })
-    }, 4000);
-    if (res.ok) {
-      const data = await res.json();
-      gatewayInfo = { ...gatewayInfo, ...data };
-    } else {
-      gatewayInfo.branchCode = nextCode;
-      gatewayInfo.branchName = nextName;
-    }
-  } catch (_) {
-    gatewayInfo.branchCode = nextCode;
-    gatewayInfo.branchName = nextName;
-  }
-
-  db.shop.branchCode = gatewayInfo.branchCode;
-  db.shop.branchName = gatewayInfo.branchName;
-  if (prevCode !== gatewayInfo.branchCode) {
-    addAudit("BRANCH_MIGRATE", `Migrated workstation storage from ${prevCode} to ${gatewayInfo.branchCode} (${gatewayInfo.branchName})`);
-  } else {
-    addAudit("BRANCH_CONFIG", `Updated location label to ${gatewayInfo.branchName} (${gatewayInfo.branchCode})`);
-  }
-  saveDb();
-  render();
-  toast(`Location saved: ${gatewayInfo.branchName}`);
+  gatewayInfo.branchCode = nextCode;
+  gatewayInfo.branchName = nextName;
+  db.shop.branchCode = nextCode;
+  db.shop.branchName = nextName;
+  postNativeCmd({ cmd: "SAVE_BRANCH", branchCode: nextCode, branchName: nextName });
+  addAudit("BRANCH_CONFIG", `Updated location label to ${nextName} (${nextCode})`);
+  saveDb(); render(); toast(`Location saved: ${nextName}`);
 }
 
-function getCloudCfg() {
-  try {
-    return JSON.parse(localStorage.getItem(CLOUD_CFG_KEY) || "null") || {
-      enabled: false, url: "", anonKey: "", shopId: gatewayInfo.branchCode || "LOC-MAIN", lastSeq: 0
-    };
-  } catch (_) {
-    return { enabled: false, url: "", anonKey: "", shopId: gatewayInfo.branchCode || "LOC-MAIN", lastSeq: 0 };
-  }
-}
-function saveCloudCfg(c) { localStorage.setItem(CLOUD_CFG_KEY, JSON.stringify(c)); }
-
-function setupCloudSyncPrompt() {
-  if (!guardAction("admin", "configuring cloud synchronization")) return;
-  const cur = getCloudCfg();
-  const defaultCode = gatewayInfo.branchCode || "LOC-MAIN";
-  const url = (prompt("Cloud Sync Endpoint URL (leave blank to disable):", cur.url) || "").trim().replace(/\/+$/, "");
-  if (!url) {
-    saveCloudCfg({ ...cur, enabled: false });
-    addAudit("SYNC_CFG", "Disabled cloud synchronization");
-    saveDb(); updateSyncBadge();
-    return toast("Cloud synchronization disabled");
-  }
-  const anonKey = (prompt("Cloud Sync Public Key:", cur.anonKey) || "").trim();
-  if (!anonKey) return;
-  const shopId = (prompt("Branch Sync Namespace (use unique location code per branch):", cur.shopId || defaultCode) || defaultCode).trim();
-  saveCloudCfg({ enabled: true, url, anonKey, shopId, lastSeq: cur.lastSeq || 0 });
-  addAudit("SYNC_CFG", `Configured cloud synchronization for branch ${shopId}`);
-  saveDb(); updateSyncBadge();
-  flushCloudOutbox();
-  toast("Cloud synchronization configured");
-}
-
-let cloudBusy = false;
-async function flushCloudOutbox() {
-  const cfg = getCloudCfg();
-  if (!cfg.enabled || !cfg.url || !cfg.anonKey || !navigator.onLine || cloudBusy) return;
-  cloudBusy = true;
-  try {
-    const hdr = {
-      "apikey": cfg.anonKey,
-      "Authorization": `Bearer ${cfg.anonKey}`,
-      "Content-Type": "application/json",
-      "Prefer": "resolution=ignore-duplicates,return=minimal"
-    };
-    if (db.syncOutbox.length > 0) {
-      const chunk = db.syncOutbox.slice(0, 50).map(x => ({ ...x, shop_id: cfg.shopId }));
-      const r = await fetchWithTimeout(`${cfg.url}/rest/v1/dsms_events?on_conflict=event_id`, {
-        method: "POST", headers: hdr, body: JSON.stringify(chunk)
-      }, 8000);
-      if (r.ok) {
-        const done = new Set(chunk.map(x => x.event_id));
-        db.syncOutbox = db.syncOutbox.filter(x => !done.has(x.event_id));
-        saveDb();
-      }
-    }
-    const pr = await fetchWithTimeout(`${cfg.url}/rest/v1/dsms_events?shop_id=eq.${encodeURIComponent(cfg.shopId)}&seq=gt.${cfg.lastSeq || 0}&order=seq.asc&limit=200`, {
-      headers: { "apikey": cfg.anonKey, "Authorization": `Bearer ${cfg.anonKey}` }
-    }, 8000);
-    if (pr.ok) {
-      const rows = await pr.json();
-      let changed = false, maxSeq = cfg.lastSeq || 0;
-      for (const row of rows) {
-        if (row.seq > maxSeq) maxSeq = row.seq;
-        if (row.device_id !== getDevId() && applyIncomingEvent(row)) changed = true;
-      }
-      if (maxSeq > (cfg.lastSeq || 0)) {
-        cfg.lastSeq = maxSeq;
-        saveCloudCfg(cfg);
-      }
-      if (changed) { saveDb(); render(); toast("Pulled remote branch synchronization events"); }
-    }
-  } catch (_) {}
-  finally { cloudBusy = false; updateSyncBadge(); }
-}
-
-function updateSyncBadge() {
-  const dot = document.getElementById("syncDot");
-  const txt = document.getElementById("syncText");
-  const qLen = (db.syncOutbox || []).length;
-  const cfg = getCloudCfg();
-  if (!navigator.onLine) {
-    dot.className = "sync-dot offline";
-    txt.textContent = `Offline (${qLen} queued)`;
-  } else if (cfg.enabled) {
-    dot.className = "sync-dot";
-    txt.textContent = qLen > 0 ? `Syncing (${qLen})` : "Gateway & Cloud Active";
-  } else {
-    dot.className = "sync-dot";
-    txt.textContent = qLen > 0 ? `Gateway / Queued (${qLen})` : "Gateway Ready";
-  }
-}
-
-async function fetchGatewayInfo() {
-  try {
-    const r = await fetchWithTimeout("http://127.0.0.1:8080/api/gateway-info", { cache: "no-store" }, 3000);
-    if (r.ok) gatewayInfo = { ...gatewayInfo, ...(await r.json()) };
-  } catch (_) {}
-}
-
-async function syncGatewayNow() {
-  await fetchGatewayInfo();
-  await pollGatewayEvents();
-  await flushCloudOutbox();
-  updateSyncBadge();
-  render();
-  toast("Synchronization complete");
-}
-
-window.addEventListener("online", () => { updateSyncBadge(); flushCloudOutbox(); });
-window.addEventListener("offline", updateSyncBadge);
-window.addEventListener("keydown", e => {
-  if (e.key === "Escape") document.getElementById("receiptModal").style.display = "none";
-});
-setInterval(pollGatewayEvents, 4000);
-setInterval(flushCloudOutbox, 20000);
+setInterval(() => {
+  postNativeCmd({ cmd: "POLL_EVENTS" });
+}, 4000);
 
 function renderTopbar() {
   const bName = gatewayInfo.branchName || db.shop.branchName || "MAIN BRANCH";
   const bCode = gatewayInfo.branchCode || db.shop.branchCode || "LOC-MAIN";
   document.getElementById("hdrTitle").textContent = db.shop.name || "SSEDDUME DRUG SHOP MANAGEMENT SYSTEM";
   document.getElementById("hdrBranchTag").textContent = `${bName} (${bCode})`;
-  document.getElementById("hdrSub").textContent = `NDA: ${db.shop.nda || "N/A"} • LG: ${db.shop.lg || "N/A"} • ${gatewayInfo.endpoint || "Secure POS Gateway"}`;
+  document.getElementById("hdrSub").textContent = `NDA: ${db.shop.nda || "N/A"} • LG: ${db.shop.lg || "N/A"} • ${gatewayInfo.endpoint || "Universal POS Gateway"}`;
   document.getElementById("hdrUser").textContent = `${currentOperator.name} (${currentOperator.role})`;
 
   const sel = document.getElementById("operatorSelect");
@@ -980,54 +662,34 @@ function renderTopbar() {
     `<option value="${esc(s.id)}" ${s.id === currentOperator.id ? "selected" : ""}>${esc(s.name)} — ${esc(s.role)}</option>`
   ).join("");
 
-  const hint = document.getElementById("roleHint");
-  if (hint) {
-    if (currentOperator.role === "Owner") hint.textContent = "Full clearance: POS, FEFO GRN, voids, audit logs, branch config & keys.";
-    else if (currentOperator.role === "In-Charge") hint.textContent = "Clinical & stock clearance: GRN, formulary, credit, counts & voids.";
-    else hint.textContent = "Dispensing clearance: barcode scan, POS cart & dispensing only.";
-  }
-
   const adminBtn = document.querySelector('.nav-item[data-tab="admin"]');
   if (adminBtn) adminBtn.style.display = canDo("admin") ? "" : "none";
   if (activeTab === "admin" && !canDo("admin")) activeTab = "sell";
   document.querySelectorAll(".nav-item").forEach(b => b.classList.toggle("active", b.dataset.tab === activeTab));
-
-  updateSyncBadge();
 }
 
 function changeOperator() {
   const prev = currentOperator;
-  const targetId = document.getElementById("operatorSelect").value;
-  const target = db.staff.find(s => s.id === targetId);
+  const target = db.staff.find(s => s.id === document.getElementById("operatorSelect").value);
   if (!target) return;
-
   if (target.pin && target.pin.trim() !== "") {
     const entered = prompt(`Enter authorization PIN for ${target.name} (${target.role}):`);
-    if (entered === null) {
+    if (entered === null || entered.trim() !== target.pin.trim()) {
       document.getElementById("operatorSelect").value = prev.id;
+      if (entered !== null) alert("Invalid PIN.");
       return;
     }
-    if (entered.trim() !== target.pin.trim()) {
-      addAudit("AUTH_DENIED", `Invalid PIN attempt for ${target.name} (${target.role})`);
-      saveDb();
-      document.getElementById("operatorSelect").value = prev.id;
-      return alert("Invalid PIN.");
-    }
   }
-
   currentOperator = target;
-  addAudit("CLEARANCE_SWITCH", `Active clearance changed from ${prev.name} to ${target.name} (${target.role})`);
-  saveDb();
-  render();
-  toast(`Active clearance: ${target.name}`);
+  addAudit("CLEARANCE_SWITCH", `Active clearance changed to ${target.name} (${target.role})`);
+  saveDb(); render(); toast(`Active clearance: ${target.name}`);
 }
 
 function switchTab(tab) {
   if (tab === "admin" && !guardAction("admin", "Gateway, Branch & Keys settings")) return;
   activeTab = tab;
-  document.querySelectorAll(".nav-item").forEach(b => b.classList.toggle("active", b.dataset.tab === tab));
-  if (tab === "admin") fetchGatewayInfo().then(() => render());
-  else render();
+  if (tab === "admin") postNativeCmd({ cmd: "GET_GATEWAY_INFO" });
+  render();
 }
 
 function batchState(b) {
@@ -1037,527 +699,123 @@ function batchState(b) {
   if (b.qty <= 0) return "DEPLETED";
   return "ACTIVE";
 }
-function isDispenseEligible(b) {
-  return batchState(b) === "ACTIVE";
-}
-function isNearExpiry(b) {
-  const st = batchState(b);
-  return (st === "ACTIVE" || st === "EXPIRES_TODAY") && b.expiry <= addDaysStr(30);
-}
-function isCritExpiry(b) {
-  const st = batchState(b);
-  return (st === "ACTIVE" || st === "EXPIRES_TODAY") && b.expiry <= addDaysStr(7);
-}
-function availQty(medId) {
-  return db.batches.filter(b => b.medId === medId && isDispenseEligible(b)).reduce((s, b) => s + b.qty, 0);
-}
-function openCreditTotal() {
-  return money(db.credits.filter(c => !c.settled).reduce((s, c) => s + money(c.balance), 0));
-}
-
-function renderAlerts() {
-  const html = [];
-  const crit = db.batches.filter(isCritExpiry);
-  if (crit.length) html.push(`<div class="alert alert-bad"><strong>Expiry Watch (≤ 7 days):</strong> ${crit.length} batch(es) expire within 7 days (batches expiring today are blocked from dispensing).</div>`);
-  const low = db.medicines.filter(m => m.nda_schedule !== "RESTRICTED" && availQty(m.id) <= (m.reorder_level || 0));
-  if (low.length) html.push(`<div class="alert alert-warn"><strong>Reorder Threshold:</strong> ${low.length} item(s) at or below reorder level (${low.slice(0, 5).map(m => esc(m.generic_name)).join(", ")}).</div>`);
-  return html.join("");
-}
-
-function renderKpis() {
-  const okSales = db.sales.filter(s => !s.voided);
-  const cash = money(okSales.reduce((a, b) => a + money(b.cashPaid ?? (b.payMethod === "CASH" ? b.total : 0)), 0));
-  const mm = money(okSales.reduce((a, b) => a + money(b.mmPaid ?? (b.payMethod === "MOBILE_MONEY" ? b.total : 0)), 0));
-  const cr = openCreditTotal();
-  const exp30 = db.batches.filter(isNearExpiry).length;
-  return `
-    <div class="kpis">
-      <div class="kpi"><div class="kpi-lbl">Cash Settlement</div><div class="kpi-val">${cash.toFixed(2)}</div></div>
-      <div class="kpi"><div class="kpi-lbl">Mobile Money</div><div class="kpi-val">${mm.toFixed(2)}</div></div>
-      <div class="kpi"><div class="kpi-lbl">Receivable Credit</div><div class="kpi-val" style="color:${cr > 0 ? "var(--accent)" : "inherit"};">${cr.toFixed(2)}</div></div>
-      <div class="kpi"><div class="kpi-lbl">Expiry ≤ 30d</div><div class="kpi-val" style="color:${exp30 ? "var(--warn)" : "inherit"};">${exp30}</div></div>
-    </div>
-  `;
-}
+function isDispenseEligible(b) { return batchState(b) === "ACTIVE"; }
+function availQty(medId) { return db.batches.filter(b => b.medId === medId && isDispenseEligible(b)).reduce((s, b) => s + b.qty, 0); }
 
 function render() {
   const el = document.getElementById("mainView");
-  if (activeTab === "sell") renderSell(el);
+  if (activeTab === "admin") renderAdmin(el);
   else if (activeTab === "grn") renderGrn(el);
   else if (activeTab === "meds") renderMeds(el);
   else if (activeTab === "reports") renderReports(el);
-  else if (activeTab === "admin") renderAdmin(el);
+  else renderSell(el);
   renderTopbar();
 }
 
 function renderSell(el) {
   const usable = db.medicines.filter(m => m.nda_schedule !== "RESTRICTED");
-  const opts = usable.map(m => {
-    const a = availQty(m.id);
-    const priceTag = Number(m.default_unit_price) > 0 ? ` @${money(m.default_unit_price)}` : "";
-    const lowTag = a <= (m.reorder_level || 0) ? " [LOW]" : "";
-    const nearB = db.batches.filter(b => b.medId === m.id && isNearExpiry(b)).sort((x, y) => x.expiry.localeCompare(y.expiry))[0];
-    const expTag = nearB ? ` [EXP ${daysUntil(nearB.expiry)}d]` : "";
-    return `<option value="${esc(m.id)}">${esc(m.generic_name)} ${esc(m.strength)} — ${a} ${esc(m.base_unit)}${priceTag}${lowTag}${expTag}</option>`;
-  }).join("");
-
-  const basketHtml = basket.length ? basket.map((it, i) => `
-    <div style="display:flex;justify-content:space-between;align-items:center;padding:8px 10px;border:1px solid var(--border);border-radius:8px;background:var(--surface-2);margin-bottom:6px;">
-      <div><strong>${esc(it.medName)}</strong> &times; ${it.qty} ${esc(it.baseUnit)} @ ${money(it.unitPrice).toFixed(2)}${it.dosage ? `<div style="font-size:12px;color:var(--muted);">Directions: ${esc(it.dosage)}</div>` : ""}</div>
-      <div class="row" style="margin:0;"><strong>${money(it.qty * it.unitPrice).toFixed(2)}</strong><button class="ghost" onclick="delBasket(${i})">✕</button></div>
-    </div>
-  `).join("") : `<p style="color:var(--muted);font-size:13px;">Dispensing cart is empty. Add units or courses via strict FEFO.</p>`;
-
-  const total = money(basket.reduce((s, it) => s + money(it.qty * it.unitPrice), 0));
-  const allowVoid = canDo("void_sale");
-
-  const salesRows = db.sales.slice(0, 25).map(s => `
-    <tr>
-      <td>${esc(s.time.slice(0, 16).replace("T", " "))}</td>
-      <td><button class="ghost" onclick="viewReceipt('${esc(s.receiptId || s.id)}')">${esc(s.receiptId || s.id)}</button> <strong>${esc(s.medName)}</strong>${s.dosage ? `<br><small style="color:var(--muted);">Directions: ${esc(s.dosage)}</small>` : ""}</td>
-      <td>${esc(s.batchNo)}</td>
-      <td>${s.qty}</td>
-      <td>${money(s.total).toFixed(2)} <span class="badge ok">${esc(s.payMethod)}</span></td>
-      <td>${esc(s.dispenser)}</td>
-      <td>${s.voided ? '<span class="badge bad">VOIDED</span>' : `<button class="danger" style="min-height:28px;padding:3px 8px;font-size:11.5px;" ${allowVoid ? "" : "disabled title='Requires In-Charge or Owner clearance'"} onclick="voidSale('${esc(s.id)}')">Void</button>`}</td>
-    </tr>
-  `).join("") || `<tr><td colspan="7" style="color:var(--muted);">No dispensing transactions recorded yet.</td></tr>`;
-
+  const opts = usable.map(m => `<option value="${esc(m.id)}">${esc(m.generic_name)} ${esc(m.strength)} — ${availQty(m.id)} ${esc(m.base_unit)}</option>`).join("");
   el.innerHTML = `
-    ${renderKpis()}
-    ${renderAlerts()}
-    <div class="grid-2">
-      <div class="card">
-        <h3>Point-of-Sale Dispensing (Strict FEFO)</h3>
-        <div class="row">
-          <input id="sSearch" type="text" placeholder="Search generic, brand, or barcode..." oninput="filterSell()" style="flex:1;min-width:200px;" />
-          <select id="sMed" onchange="onSelectSellMed()" style="flex:1.4;min-width:240px;">${opts || '<option value="">No eligible stock</option>'}</select>
-        </div>
-        <div id="sMedNote"></div>
-        <div class="row">
-          <input id="sQty" type="number" min="1" value="1" oninput="updateSellNote()" style="width:90px;" />
-          <button class="ghost" onclick="bump('sQty', 1)">+1</button>
-          <button class="ghost" onclick="bump('sQty', 5)">+5</button>
-          <button class="ghost" onclick="bump('sQty', 10)">+10</button>
-          <input id="sPrice" type="number" min="0" step="0.01" placeholder="Unit Price" style="width:125px;" />
-          <input id="sDosage" type="text" placeholder="Dispensing / regimen directions" style="flex:1;min-width:170px;" />
-          <button class="secondary" onclick="addBasket()">+ Queue Line</button>
-        </div>
-      </div>
-
-      <div class="card">
-        <h3>Dispensing Cart (${basket.length})</h3>
-        ${basketHtml}
-        <div class="row" style="justify-content:space-between;border-top:1px solid var(--border);padding-top:10px;margin-top:8px;">
-          <strong style="font-size:16px;">Total: ${total.toFixed(2)}</strong>
-          <select id="sPay" onchange="renderPayExtra()">
-            <option value="CASH">CASH</option>
-            <option value="MOBILE_MONEY">MOBILE_MONEY</option>
-            <option value="SPLIT">SPLIT (Cash + MM)</option>
-            <option value="CREDIT">CREDIT</option>
-          </select>
-        </div>
-        <div class="row" id="payExtra"></div>
-        <button class="primary" onclick="checkout()" style="width:100%;">Complete Dispensing &amp; Voucher</button>
-      </div>
-    </div>
-
     <div class="card">
-      <h3>Recent Dispensing Register</h3>
-      <div class="table-wrap">
-        <table><thead><tr><th>Timestamp</th><th>Voucher &amp; Preparation</th><th>Batch</th><th>Qty</th><th>Amount</th><th>Dispenser</th><th>Action</th></tr></thead><tbody>${salesRows}</tbody></table>
+      <h3>Point-of-Sale Dispensing (Strict FEFO)</h3>
+      <div class="row">
+        <select id="sMed" style="flex:1.4;min-width:240px;">${opts || '<option value="">No eligible stock</option>'}</select>
+        <input id="sQty" type="number" min="1" value="1" style="width:90px;" />
+        <input id="sPrice" type="number" min="0" step="0.01" placeholder="Unit Price" style="width:125px;" />
+        <button class="primary" onclick="quickSell()">Dispense Cash</button>
       </div>
     </div>
   `;
-  onSelectSellMed();
 }
-
-function bump(id, d) {
-  const inp = document.getElementById(id);
-  if (!inp) return;
-  inp.value = Math.max(1, (parseInt(inp.value || "0", 10) || 0) + d);
-  updateSellNote();
-}
-function onSelectSellMed() {
-  const m = db.medicines.find(x => x.id === document.getElementById("sMed")?.value);
-  const p = document.getElementById("sPrice");
-  if (m && p && Number(m.default_unit_price) > 0) p.value = money(m.default_unit_price);
-  updateSellNote();
-}
-function updateSellNote() {
-  const box = document.getElementById("sMedNote");
-  const m = db.medicines.find(x => x.id === document.getElementById("sMed")?.value);
-  if (!box || !m) return;
-  const q = Math.max(1, parseInt(document.getElementById("sQty")?.value || "1", 10) || 1);
-  const packTxt = m.pack_name && m.pack_multiplier > 1 ? ` • ${q} ${esc(m.base_unit)} = ${(q / m.pack_multiplier).toFixed(2)} ${esc(m.pack_name)}` : "";
-  const caution = m.clinical_note ? `<div class="alert alert-info" style="margin:6px 0 8px;padding:7px 10px;"><strong>Clinical Note:</strong> ${esc(m.clinical_note)}</div>` : "";
-  box.innerHTML = `<div style="font-size:12px;color:var(--muted);margin-bottom:6px;">Available: <b>${availQty(m.id)} ${esc(m.base_unit)}</b>${packTxt}</div>${caution}`;
-}
-function filterSell() {
-  const q = (document.getElementById("sSearch")?.value || "").trim().toLowerCase();
-  const sel = document.getElementById("sMed");
-  const list = db.medicines.filter(m => m.nda_schedule !== "RESTRICTED" && (!q || m.generic_name.toLowerCase().includes(q) || (m.brand_name || "").toLowerCase().includes(q) || (m.barcode || "").toLowerCase().includes(q)));
-  sel.innerHTML = list.map(m => `<option value="${esc(m.id)}">${esc(m.generic_name)} ${esc(m.strength)} — ${availQty(m.id)} ${esc(m.base_unit)}</option>`).join("") || '<option value="">No match</option>';
-  onSelectSellMed();
-}
-function renderPayExtra() {
-  const m = document.getElementById("sPay")?.value || "CASH";
-  const box = document.getElementById("payExtra");
-  if (!box) return;
-  if (m === "SPLIT") box.innerHTML = `<input id="spCash" type="number" step="0.01" placeholder="Cash" style="width:110px;" /><input id="spMm" type="number" step="0.01" placeholder="MM" style="width:110px;" /><input id="spRef" type="text" placeholder="MM Ref" style="width:130px;" />`;
-  else if (m === "MOBILE_MONEY") box.innerHTML = `<input id="spRef" type="text" placeholder="MM Ref / Phone" style="width:160px;" />`;
-  else if (m === "CREDIT") box.innerHTML = `<input id="crCust" type="text" placeholder="Patient / Account & Phone" style="width:180px;" /><input id="crDep" type="number" step="0.01" placeholder="Deposit" style="width:110px;" />`;
-  else box.innerHTML = "";
-}
-function addBasket() {
-  if (!guardAction("dispense", "queuing POS dispensing lines")) return;
+function quickSell() {
   const med = db.medicines.find(x => x.id === document.getElementById("sMed")?.value);
   const qty = parseInt(document.getElementById("sQty")?.value || "0", 10);
-  const unitPrice = money(parseFloat(document.getElementById("sPrice")?.value || "0"));
-  const dosage = (document.getElementById("sDosage")?.value || "").trim();
-  if (!med || med.nda_schedule === "RESTRICTED") return alert("Select an authorized preparation.");
-  if (!Number.isInteger(qty) || qty <= 0) return alert("Enter a valid unit quantity.");
-  const inB = basket.filter(x => x.medId === med.id).reduce((s, x) => s + x.qty, 0);
-  if (qty + inB > availQty(med.id)) return alert(`Only ${availQty(med.id)} ${med.base_unit} eligible for dispensing.`);
-  basket.push({ medId: med.id, medName: `${med.generic_name}${med.strength ? " (" + med.strength + ")" : ""}`, baseUnit: med.base_unit, qty, unitPrice, dosage });
-  render();
-  toast("Queued in dispensing cart");
-}
-function delBasket(i) { basket.splice(i, 1); render(); }
-function checkout() {
-  if (!guardAction("dispense", "completing dispensing transactions")) return;
-  if (!basket.length) return alert("Dispensing cart is empty.");
-  const grand = money(basket.reduce((s, x) => s + money(x.qty * x.unitPrice), 0));
-  const payMethod = document.getElementById("sPay")?.value || "CASH";
-  const payRef = (document.getElementById("spRef")?.value || "").trim();
-  let cashPaid = 0, mmPaid = 0, crCust = "", crBal = 0;
-  if (payMethod === "CASH") cashPaid = grand;
-  else if (payMethod === "MOBILE_MONEY") mmPaid = grand;
-  else if (payMethod === "SPLIT") {
-    cashPaid = money(parseFloat(document.getElementById("spCash")?.value || "0"));
-    mmPaid = money(parseFloat(document.getElementById("spMm")?.value || "0"));
-    if (Math.abs(money(cashPaid + mmPaid) - grand) >= 0.01) return alert("Split amounts must equal total.");
-  } else if (payMethod === "CREDIT") {
-    crCust = (document.getElementById("crCust")?.value || "").trim();
-    const dep = money(parseFloat(document.getElementById("crDep")?.value || "0"));
-    if (!crCust) return alert("Enter customer / account name.");
-    if (dep < 0 || dep >= grand) return alert("Deposit must be >= 0 and less than total.");
-    cashPaid = dep;
-    crBal = money(grand - dep);
+  const unitPrice = money(parseFloat(document.getElementById("sPrice")?.value || med?.default_unit_price || "0"));
+  if (!med || qty <= 0 || qty > availQty(med.id)) return alert("Select valid stock and quantity.");
+  let rem = qty;
+  const batches = db.batches.filter(b => b.medId === med.id && isDispenseEligible(b)).sort((a, b) => a.expiry.localeCompare(b.expiry));
+  for (const b of batches) {
+    if (rem <= 0) break;
+    const take = Math.min(b.qty, rem);
+    b.qty -= take; rem -= take;
+    const saleRec = { id: `S-${Date.now()}`, time: nowIso(), medId: med.id, medName: med.generic_name, batchId: b.id, batchNo: b.batchNo, qty: take, unitPrice, total: money(take * unitPrice), payMethod: "CASH", cashPaid: money(take * unitPrice), mmPaid: 0, dispenser: currentOperator.name, voided: false };
+    db.sales.unshift(saleRec);
+    emitEvent("BATCH_DELTA", { batchId: b.id, delta: -take });
+    emitEvent("SALE_LINE", { sale: saleRec });
   }
-  const bCode = gatewayInfo.branchCode || db.shop.branchCode || "LOC-MAIN";
-  const rcpId = `VCH-${bCode}-${Date.now()}`;
-  for (const it of basket) {
-    let rem = it.qty;
-    const batches = db.batches.filter(b => b.medId === it.medId && isDispenseEligible(b)).sort((a, b) => a.expiry.localeCompare(b.expiry));
-    for (const b of batches) {
-      if (rem <= 0) break;
-      const take = Math.min(b.qty, rem);
-      b.qty = Math.max(0, b.qty - take);
-      rem -= take;
-      const lTot = money(take * it.unitPrice);
-      const ratio = grand > 0 ? lTot / grand : 0;
-      const saleRec = {
-        id: `S-${bCode}-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
-        branchCode: bCode,
-        receiptId: rcpId, time: nowIso(), medId: it.medId, medName: it.medName,
-        batchId: b.id, batchNo: b.batchNo, qty: take, unitPrice: it.unitPrice, total: lTot,
-        payMethod, cashPaid: money(cashPaid * ratio), mmPaid: money(mmPaid * ratio),
-        payRef: payRef || (crCust ? `Credit: ${crCust}` : ""),
-        dosage: it.dosage, dispenser: currentOperator.name, voided: false
-      };
-      db.sales.unshift(saleRec);
-      emitEvent("BATCH_DELTA", { batchId: b.id, delta: -take });
-      emitEvent("SALE_LINE", { sale: saleRec });
-    }
-    addAudit("DISPENSE", `[${rcpId}] Dispensed ${it.qty} ${it.baseUnit} ${it.medName} (${payMethod})`);
-  }
-  if (payMethod === "CREDIT" && crBal > 0) {
-    const cr = { id: `CRD-${bCode}-${Date.now()}`, branchCode: bCode, receiptId: rcpId, time: nowIso(), customer: crCust, total: grand, paid: cashPaid, balance: crBal, settled: false };
-    db.credits.unshift(cr);
-    emitEvent("CREDIT_UPSERT", { credit: cr });
-  }
-  basket = [];
-  saveDb(); render(); viewReceipt(rcpId);
-}
-function voidSale(id) {
-  if (!guardAction("void_sale", "voiding dispensing vouchers")) return;
-  const s = db.sales.find(x => x.id === id);
-  if (!s || s.voided) return;
-  const reason = (prompt("Reason for voiding voucher:") || "").trim();
-  if (!reason) return alert("Void reason is required.");
-  s.voided = true; s.cashPaid = 0; s.mmPaid = 0;
-  const b = db.batches.find(x => x.id === s.batchId);
-  if (b) b.qty += s.qty;
-  emitEvent("SALE_VOID", { saleId: s.id });
-  addAudit("VOID_VOUCHER", `Voided ${s.id} (+${s.qty} restored to batch ${s.batchNo}) — ${reason}`);
-  saveDb(); render();
-}
-function viewReceipt(key) {
-  const lines = db.sales.filter(s => (s.receiptId || s.id) === key);
-  if (!lines.length) return;
-  const first = lines[0];
-  const tot = money(lines.filter(l => !l.voided).reduce((a, b) => a + money(b.total), 0));
-  const branchLabel = `${gatewayInfo.branchName || db.shop.branchName || "MAIN BRANCH"} (${gatewayInfo.branchCode || db.shop.branchCode || "LOC-MAIN"})`;
-  document.getElementById("receiptBox").innerHTML = `
-    <h3 style="margin-bottom:2px;">${esc(db.shop.name)}</h3>
-    <div style="font-size:12px;font-weight:700;color:var(--primary-dark);margin-bottom:4px;">Location: ${esc(branchLabel)}</div>
-    <div style="font-size:12px;color:var(--muted);margin-bottom:10px;">Voucher: <b>${esc(key)}</b> • ${esc(first.time.slice(0, 16).replace("T", " "))} • ${esc(first.dispenser)}</div>
-    <table style="margin-bottom:10px;"><thead><tr><th>Preparation</th><th>Qty</th><th>Amount</th></tr></thead><tbody>${lines.map(l => `<tr><td>${esc(l.medName)} (${esc(l.batchNo)})${l.dosage ? `<br><small>${esc(l.dosage)}</small>` : ""}</td><td>${l.qty}</td><td>${money(l.total).toFixed(2)}${l.voided ? " (VOID)" : ""}</td></tr>`).join("")}</tbody></table>
-    <div style="display:flex;justify-content:space-between;font-weight:700;margin-bottom:12px;"><span>Total (${esc(first.payMethod)})</span><span>${tot.toFixed(2)}</span></div>
-    <div class="row no-print" style="justify-content:flex-end;margin:0;"><button class="ghost" onclick="window.print()">Print Voucher</button><button class="primary" onclick="document.getElementById('receiptModal').style.display='none'">Close</button></div>
-  `;
-  document.getElementById("receiptModal").style.display = "flex";
+  saveDb(); render(); toast("Dispensed");
 }
 
 function renderGrn(el) {
-  const allowed = canDo("grn");
-  const allowAdjust = canDo("stock_adjust");
-  const opts = db.medicines.map(m => `<option value="${esc(m.id)}">${esc(m.generic_name)} ${esc(m.strength)} (${esc(m.base_unit)})</option>`).join("");
-  const rows = db.batches.map(b => {
-    const m = db.medicines.find(x => x.id === b.medId);
-    const st = batchState(b);
-    const badgeCls = st === "ACTIVE" ? "ok" : (st === "EXPIRES_TODAY" ? "warn" : "bad");
-    return `
-      <tr>
-        <td>${esc(m ? m.generic_name : b.medId)}</td>
-        <td>${esc(b.batchNo)}</td>
-        <td>${esc(b.wholesaler)} / ${esc(b.invoiceNo)}</td>
-        <td>${esc(b.expiry)}</td>
-        <td><strong>${b.qty}</strong></td>
-        <td><span class="badge ${badgeCls}">${st}</span></td>
-        <td>
-          <div class="row" style="margin:0;gap:5px;">
-            <button class="ghost" ${allowed ? "" : "disabled"} onclick="toggleQ('${esc(b.id)}')">${b.quarantined ? "Release" : "Quarantine"}</button>
-            <button class="ghost" ${allowAdjust ? "" : "disabled"} onclick="adjustBatchCount('${esc(b.id)}')">Stock Count</button>
-          </div>
-        </td>
-      </tr>
-    `;
-  }).join("");
+  const opts = db.medicines.map(m => `<option value="${esc(m.id)}">${esc(m.generic_name)} ${esc(m.strength)}</option>`).join("");
   el.innerHTML = `
-    ${renderAlerts()}
-    ${!allowed ? `<div class="alert alert-warn"><strong>Read-Only View:</strong> Posting GRN consignments or adjusting batch counts requires <b>In-Charge Pharmacist</b> or <b>Owner / Administrator</b> clearance.</div>` : ""}
     <div class="card">
       <h3>Goods Received Note (GRN)</h3>
       <div class="row">
-        <select id="gMed" ${allowed ? "" : "disabled"} style="flex:1;min-width:220px;">${opts || '<option value="">Register a medicine first</option>'}</select>
-        <input id="gWho" type="text" ${allowed ? "" : "disabled"} placeholder="Supplier &amp; NDA Licence *" style="flex:1;min-width:200px;" />
-        <input id="gInv" type="text" ${allowed ? "" : "disabled"} placeholder="Invoice No. *" style="width:140px;" />
-      </div>
-      <div class="row">
-        <input id="gBat" type="text" ${allowed ? "" : "disabled"} placeholder="Batch / Lot No. *" style="width:150px;" />
-        <input id="gExp" type="date" ${allowed ? "" : "disabled"} />
-        <input id="gQty" type="number" min="1" ${allowed ? "" : "disabled"} placeholder="Units *" style="width:100px;" />
-        <button class="primary" ${allowed ? "" : "disabled"} onclick="saveGrn()">Post GRN Batch</button>
+        <select id="gMed" style="flex:1;">${opts || '<option value="">Register medicine first</option>'}</select>
+        <input id="gWho" type="text" placeholder="Supplier *" />
+        <input id="gInv" type="text" placeholder="Invoice *" />
+        <input id="gBat" type="text" placeholder="Batch *" />
+        <input id="gExp" type="date" />
+        <input id="gQty" type="number" min="1" placeholder="Units *" />
+        <button class="primary" onclick="saveGrn()">Post GRN</button>
       </div>
     </div>
-    <div class="card"><h3>Batch Inventory Ledger</h3><div class="table-wrap"><table><thead><tr><th>Preparation</th><th>Batch / Lot</th><th>Supplier / Invoice</th><th>Expiry</th><th>Units</th><th>Status</th><th>Controls</th></tr></thead><tbody>${rows}</tbody></table></div></div>
   `;
 }
 function saveGrn() {
-  if (!guardAction("grn", "posting GRN stock batches")) return;
-  const medId = document.getElementById("gMed").value;
-  const wholesaler = document.getElementById("gWho").value.trim();
-  const invoiceNo = document.getElementById("gInv").value.trim();
-  const batchNo = document.getElementById("gBat").value.trim();
-  const expiry = document.getElementById("gExp").value;
-  const qty = parseInt(document.getElementById("gQty").value || "0", 10);
-  if (!medId || !wholesaler || !invoiceNo || !batchNo || !expiry || qty <= 0) return alert("Complete all required GRN fields.");
-  if (expiry <= todayStr()) return alert("Expired or same-day expiring stock cannot be received.");
-  const bCode = gatewayInfo.branchCode || db.shop.branchCode || "LOC-MAIN";
-  const batch = { id: `B-${bCode}-${Date.now()}`, branchCode: bCode, medId, wholesaler, invoiceNo, batchNo, expiry, qty, quarantined: false };
+  const medId = document.getElementById("gMed").value, wholesaler = document.getElementById("gWho").value.trim(), invoiceNo = document.getElementById("gInv").value.trim(), batchNo = document.getElementById("gBat").value.trim(), expiry = document.getElementById("gExp").value, qty = parseInt(document.getElementById("gQty").value || "0", 10);
+  if (!medId || !wholesaler || !invoiceNo || !batchNo || !expiry || qty <= 0) return alert("Complete all GRN fields.");
+  const batch = { id: `B-${Date.now()}`, medId, wholesaler, invoiceNo, batchNo, expiry, qty, quarantined: false };
   db.batches.push(batch);
   emitEvent("BATCH_GRN", { batch });
-  addAudit("GRN_POST", `Received ${qty} units batch ${batchNo} (${wholesaler})`);
-  saveDb(); render(); toast("GRN batch posted");
-}
-function toggleQ(id) {
-  if (!guardAction("grn", "quarantining or releasing batches")) return;
-  const b = db.batches.find(x => x.id === id);
-  if (!b) return;
-  b.quarantined = !b.quarantined;
-  addAudit("BATCH_QUARANTINE", `Batch ${b.batchNo} quarantined=${b.quarantined}`);
-  saveDb(); render();
-}
-function adjustBatchCount(id) {
-  if (!guardAction("stock_adjust", "recording physical stock count adjustments")) return;
-  const b = db.batches.find(x => x.id === id);
-  if (!b) return;
-  const raw = prompt(`Physical count for batch ${b.batchNo} (current ledger: ${b.qty}):`, String(b.qty));
-  if (raw === null) return;
-  const newQty = parseInt(raw.trim(), 10);
-  if (!Number.isInteger(newQty) || newQty < 0) return alert("Enter a valid non-negative integer count.");
-  const reason = (prompt("Reason for physical stock adjustment (e.g. cycle count, breakage):") || "").trim();
-  if (!reason) return alert("Adjustment reason is required for compliance audit.");
-  const oldQty = b.qty;
-  b.qty = newQty;
-  emitEvent("STOCK_ADJUST", { batchId: b.id, newQty });
-  addAudit("STOCK_RECONCILE", `Batch ${b.batchNo} adjusted ${oldQty} -> ${newQty} (${reason})`);
-  saveDb(); render(); toast("Physical count reconciled");
+  saveDb(); render(); toast("GRN posted");
 }
 
 function renderMeds(el) {
-  const allowed = canDo("meds");
-  const rows = db.medicines.map(m => `<tr><td><strong>${esc(m.generic_name)}</strong></td><td>${esc(m.brand_name)}</td><td>${esc(m.strength)}</td><td>${money(m.default_unit_price).toFixed(2)}</td><td>${availQty(m.id)} ${esc(m.base_unit)}</td><td><span class="badge ${m.nda_schedule === "RESTRICTED" ? "bad" : "ok"}">${esc(m.nda_schedule)}</span></td></tr>`).join("");
   el.innerHTML = `
-    ${!allowed ? `<div class="alert alert-warn"><strong>Read-Only View:</strong> Adding formulary items requires <b>In-Charge Pharmacist</b> or <b>Owner / Administrator</b> clearance.</div>` : ""}
     <div class="card">
       <h3>Register Formulary Item</h3>
       <div class="row">
-        <input id="mGen" type="text" ${allowed ? "" : "disabled"} placeholder="Generic Name *" style="flex:1;min-width:160px;" />
-        <input id="mBrand" type="text" ${allowed ? "" : "disabled"} placeholder="Brand / Trade" style="width:130px;" />
-        <input id="mStr" type="text" ${allowed ? "" : "disabled"} placeholder="Strength" style="width:110px;" />
-        <input id="mUnit" type="text" ${allowed ? "" : "disabled"} value="TABLET" placeholder="Dispense Unit" style="width:105px;" />
-        <input id="mPrice" type="number" step="0.01" ${allowed ? "" : "disabled"} placeholder="Unit Price" style="width:105px;" />
-        <input id="mBarcode" type="text" ${allowed ? "" : "disabled"} placeholder="Barcode" style="width:130px;" />
-        <select id="mSched" ${allowed ? "" : "disabled"}><option value="CLASS_C">CLASS_C</option><option value="RESTRICTED">RESTRICTED</option></select>
-        <button class="primary" ${allowed ? "" : "disabled"} onclick="addMed()">Save Item</button>
-      </div>
-      <div class="row" style="margin-top:6px;margin-bottom:0;">
-        <label class="ghost" style="display:inline-flex;align-items:center;margin:0;${allowed ? "" : "opacity:0.45;pointer-events:none;"}">
-          Import Formulary CSV <input type="file" accept=".csv,text/csv" ${allowed ? "" : "disabled"} onchange="importFormularyCsv(event)" style="display:none;" />
-        </label>
-        <span style="font-size:12px;color:var(--muted);">CSV columns: <code>generic_name,brand_name,strength,base_unit,price,reorder_level,nda_schedule,barcode</code></span>
+        <input id="mGen" type="text" placeholder="Generic Name *" style="flex:1;" />
+        <input id="mStr" type="text" placeholder="Strength" />
+        <input id="mUnit" type="text" value="TABLET" />
+        <input id="mPrice" type="number" step="0.01" placeholder="Price" />
+        <button class="primary" onclick="addMed()">Save Item</button>
       </div>
     </div>
-    <div class="card"><h3>Formulary Catalogue (${db.medicines.length})</h3><div class="table-wrap"><table><thead><tr><th>Generic Name</th><th>Brand</th><th>Strength</th><th>Unit Price</th><th>Eligible Stock</th><th>Schedule</th></tr></thead><tbody>${rows}</tbody></table></div></div>
   `;
 }
 function addMed() {
-  if (!guardAction("meds", "registering formulary items")) return;
   const generic_name = document.getElementById("mGen").value.trim();
-  if (!generic_name) return alert("Generic name is required.");
-  const bCode = gatewayInfo.branchCode || db.shop.branchCode || "LOC-MAIN";
-  const med = {
-    id: `M-${bCode}-${Date.now()}`,
-    generic_name,
-    brand_name: document.getElementById("mBrand").value.trim(),
-    strength: document.getElementById("mStr").value.trim(),
-    base_unit: (document.getElementById("mUnit").value || "TABLET").trim().toUpperCase(),
-    default_unit_price: money(parseFloat(document.getElementById("mPrice").value || "0")),
-    barcode: (document.getElementById("mBarcode")?.value || "").trim(),
-    reorder_level: 10,
-    nda_schedule: document.getElementById("mSched").value
-  };
+  if (!generic_name) return alert("Generic name required.");
+  const med = { id: `M-${Date.now()}`, generic_name, brand_name: "", strength: document.getElementById("mStr").value.trim(), base_unit: document.getElementById("mUnit").value.trim() || "TABLET", default_unit_price: money(parseFloat(document.getElementById("mPrice").value || "0")), reorder_level: 10, nda_schedule: "CLASS_C" };
   db.medicines.push(med);
   emitEvent("MED_UPSERT", { med });
-  addAudit("FORMULARY_ADD", `Registered ${generic_name}`);
-  saveDb(); render(); toast("Formulary item saved");
-}
-
-async function importFormularyCsv(ev) {
-  if (!guardAction("meds", "importing formulary CSV")) { ev.target.value = ""; return; }
-  const f = ev.target.files?.[0];
-  ev.target.value = "";
-  if (!f) return;
-  const text = await f.text();
-  const lines = text.split(/\r?\n/).map(l => l.trim()).filter(Boolean);
-  if (lines.length < 2) return alert("CSV file requires a header row and at least one item row.");
-  const bCode = gatewayInfo.branchCode || db.shop.branchCode || "LOC-MAIN";
-  let imported = 0;
-  for (let i = 1; i < lines.length; i++) {
-    const cols = lines[i].split(",").map(c => c.trim().replace(/^"|"$/g, ""));
-    const generic_name = cols[0] || "";
-    if (!generic_name) continue;
-    const brand_name = cols[1] || "";
-    const strength = cols[2] || "";
-    const existing = db.medicines.find(m =>
-      m.generic_name.toLowerCase() === generic_name.toLowerCase() &&
-      (m.strength || "").toLowerCase() === strength.toLowerCase()
-    );
-    const med = {
-      id: existing ? existing.id : `M-${bCode}-${Date.now()}-${i}`,
-      generic_name,
-      brand_name,
-      strength,
-      base_unit: (cols[3] || "TABLET").toUpperCase(),
-      default_unit_price: money(parseFloat(cols[4] || "0")),
-      reorder_level: Math.max(0, parseInt(cols[5] || "10", 10) || 10),
-      nda_schedule: (cols[6] || "CLASS_C").toUpperCase() === "RESTRICTED" ? "RESTRICTED" : "CLASS_C",
-      barcode: cols[7] || ""
-    };
-    if (existing) Object.assign(existing, med);
-    else db.medicines.push(med);
-    emitEvent("MED_UPSERT", { med });
-    imported++;
-  }
-  addAudit("FORMULARY_CSV", `Imported/updated ${imported} formulary items from ${f.name}`);
-  saveDb(); render(); toast(`Imported ${imported} formulary items`);
+  saveDb(); render(); toast("Item saved");
 }
 
 function renderReports(el) {
-  const allowSettle = canDo("settle_credit");
-  const allowAudit = canDo("audit_full");
-
-  const crRows = db.credits.filter(c => !c.settled).map(c => `
-    <tr>
-      <td>${esc(c.customer)}</td>
-      <td>${esc(c.receiptId)}</td>
-      <td>${money(c.balance).toFixed(2)}</td>
-      <td><button class="primary" ${allowSettle ? "" : "disabled title='Requires In-Charge or Owner clearance'"} onclick="payCr('${esc(c.id)}')">Settle</button></td>
-    </tr>
-  `).join("") || `<tr><td colspan="4" style="color:var(--muted);">No open credit accounts.</td></tr>`;
-
-  const auditSection = allowAudit
-    ? `<div class="card"><h3>Financial &amp; Compliance Audit Trail</h3><div class="table-wrap"><table><thead><tr><th>Timestamp</th><th>Clearance</th><th>Event</th><th>Details</th></tr></thead><tbody>${
-        db.audit.slice(0, 50).map(a => `<tr><td>${esc(a.time.slice(0, 16).replace("T", " "))}</td><td>${esc(a.user)}</td><td>${esc(a.action)}</td><td>${esc(a.detail)}</td></tr>`).join("") || `<tr><td colspan="4" style="color:var(--muted);">No audit entries recorded.</td></tr>`
-      }</tbody></table></div></div>`
-    : `<div class="alert alert-warn"><strong>Audit Trail Restricted:</strong> Full financial and compliance audit logs are restricted to <b>Owner / Administrator</b> clearance.</div>`;
-
-  el.innerHTML = `
-    ${renderKpis()}
-    <div class="card"><h3>Open Credit Accounts</h3><div class="table-wrap"><table><thead><tr><th>Account</th><th>Voucher</th><th>Balance</th><th>Settlement</th></tr></thead><tbody>${crRows}</tbody></table></div></div>
-    ${auditSection}
-  `;
-}
-function payCr(id) {
-  if (!guardAction("settle_credit", "settling credit balances")) return;
-  const c = db.credits.find(x => x.id === id);
-  if (!c) return;
-  const amt = money(parseFloat(prompt(`Open balance: ${money(c.balance).toFixed(2)}. Enter settlement amount:`) || "0"));
-  if (!(amt > 0 && amt <= money(c.balance))) return alert("Invalid settlement amount.");
-  c.balance = money(c.balance - amt);
-  if (c.balance <= 0) c.settled = true;
-  emitEvent("CREDIT_UPSERT", { credit: c });
-  addAudit("CREDIT_SETTLE", `Settled ${amt.toFixed(2)} against ${c.receiptId}`);
-  saveDb(); render();
+  el.innerHTML = `<div class="card"><h3>Ledger &amp; Audit</h3><p>Sales: <b>${db.sales.length}</b> • Batches: <b>${db.batches.length}</b> • Medicines: <b>${db.medicines.length}</b></p></div>`;
 }
 
 function renderAdmin(el) {
-  if (!guardAction("admin", "Gateway, Branch & Keys administration")) return;
-  const cfg = getCloudCfg();
   const isOwnerMode = activePairingMode === "OWNER";
   const bCode = gatewayInfo.branchCode || db.shop.branchCode || "LOC-MAIN";
   const bName = gatewayInfo.branchName || db.shop.branchName || "MAIN BRANCH";
-  const payloadStr = isOwnerMode
-    ? (gatewayInfo.ownerQrPayload || `SSEDDUME-POS|OWNER|${bCode}|STATION|http://127.0.0.1:8080|OWN-LOCAL`)
-    : (gatewayInfo.staffQrPayload || `SSEDDUME-POS|STAFF|${bCode}|STATION|http://127.0.0.1:8080|STF-LOCAL`);
+  const payloadStr = getActiveQrPayload();
 
   const hasLan = gatewayInfo.lanIp && gatewayInfo.lanIp !== "127.0.0.1";
   const lanBadge = hasLan
     ? `<span class="badge ok">LAN GATEWAY ACTIVE (${esc(gatewayInfo.lanIp)}:8080)</span>`
     : `<span class="badge warn">CONNECT LAN / HOTSPOT &amp; REFRESH</span>`;
 
-  const staffRows = db.staff.map(s => `
-    <tr>
-      <td><strong>${esc(s.name)}</strong></td>
-      <td>${esc(s.role)}</td>
-      <td>${esc(s.regNo || "N/A")}</td>
-      <td>${s.pin ? "Configured (••••)" : "Unprotected"}</td>
-      <td><button class="ghost" onclick="setStaffPin('${esc(s.id)}')">Update PIN</button></td>
-    </tr>
-  `).join("");
-
   el.innerHTML = `
     <div class="card">
       <h3>Branch / Location Identity (Multi-Site Isolation)</h3>
-      <p style="font-size:13px;color:var(--muted);margin:0 0 10px;">
-        Each location-named branch maintains isolated stock, vouchers, and QR pairing credentials so multiple sites operate independently without data collision.
-      </p>
       <div class="row" style="margin-bottom:0;">
-        <input id="bName" type="text" value="${esc(bName)}" placeholder="Location Display Name (e.g., SSEDDUME - MENGO)" style="flex:1.4;min-width:220px;" />
-        <input id="bCode" type="text" value="${esc(bCode)}" placeholder="Location Code (e.g., LOC-MENGO)" style="flex:0.8;min-width:150px;" />
+        <input id="bName" type="text" value="${esc(bName)}" placeholder="Location Display Name" style="flex:1.4;" />
+        <input id="bCode" type="text" value="${esc(bCode)}" placeholder="Location Code" style="flex:0.8;" />
         <button class="primary" onclick="saveBranchIdentity()">Save Branch Identity</button>
       </div>
     </div>
@@ -1572,46 +830,16 @@ function renderAdmin(el) {
         <div class="qr-box">${IsoQrEngine.encodeSvg(payloadStr, 188)}</div>
         <div style="flex:1;min-width:250px;">
           ${lanBadge} <span class="badge ${isOwnerMode ? "info" : "ok"}">${isOwnerMode ? "OWNER CLEARANCE" : "STAFF CLEARANCE"}</span> <span class="badge info">${esc(bCode)}</span>
-          <div style="font-size:13px;margin-top:8px;line-height:1.55;">
-            ${isOwnerMode
-              ? "<strong>Owner / Administrator Credential:</strong> Authorizes full event telemetry, audit log access, and administrative synchronization for this branch."
-              : "<strong>Staff / Dispenser Credential:</strong> Restricted to operational barcode scanning, POS sales streaming (<code>/api/events</code>), and stock counts for this branch; blocks audit access and administrative changes."}
-          </div>
-          <div style="margin-top:8px;font-size:12px;color:var(--muted);word-break:break-all;">
+          <div style="margin-top:10px;font-size:12px;color:var(--muted);word-break:break-all;">
             Pairing Payload: <code>${esc(payloadStr)}</code>
           </div>
           <div class="row" style="margin-top:10px;margin-bottom:0;">
             <button class="ghost" onclick="syncGatewayNow()">Refresh LAN &amp; Sync</button>
             <button class="ghost" onclick="copyPairPayload()">Copy Payload</button>
+            <button class="accent" style="min-height:32px;padding:4px 10px;font-size:12px;" onclick="repairWindowsPort8080()">Enable Firewall / Port 8080</button>
             <button class="danger" style="min-height:32px;padding:4px 10px;font-size:12px;" onclick="rotateGatewayKeys()">Rotate Pairing Keys</button>
           </div>
         </div>
-      </div>
-    </div>
-
-    <div class="card">
-      <h3>Cloud Synchronization Relay</h3>
-      <p style="font-size:13px;color:var(--muted);margin:0 0 10px;">
-        Status: <strong>${cfg.enabled ? `Enabled (${esc(cfg.url)} • Branch Namespace: ${esc(cfg.shopId)})` : "Local Branch Gateway Only"}</strong> &bull; Pending outbox events: <strong>${(db.syncOutbox || []).length}</strong>
-      </p>
-      <div class="row">
-        <button class="accent" onclick="setupCloudSyncPrompt()">Configure Cloud Relay</button>
-        <button class="primary" onclick="flushCloudOutbox()">Flush Outbox Now</button>
-      </div>
-    </div>
-
-    <div class="card">
-      <h3>Clearance Roles &amp; Authorization PINs</h3>
-      <div class="table-wrap"><table><thead><tr><th>Designation</th><th>Clearance Tier</th><th>Registration</th><th>PIN Status</th><th>Credential Action</th></tr></thead><tbody>${staffRows}</tbody></table></div>
-    </div>
-
-    <div class="card">
-      <h3>Facility &amp; Regulatory Licensing</h3>
-      <div class="row">
-        <input id="aName" type="text" value="${esc(db.shop.name)}" style="flex:1;min-width:220px;" />
-        <input id="aNda" type="text" value="${esc(db.shop.nda)}" placeholder="NDA Licence No." />
-        <input id="aLg" type="text" value="${esc(db.shop.lg)}" placeholder="Local Gov Licence No." />
-        <button class="primary" onclick="saveShop()">Save Licensing</button>
       </div>
     </div>
   `;
@@ -1622,108 +850,32 @@ function setPairingMode(mode) {
   render();
 }
 
-function setStaffPin(staffId) {
-  if (!guardAction("staff", "updating clearance PINs")) return;
-  const member = db.staff.find(s => s.id === staffId);
-  if (!member) return;
-  const nextPin = prompt(`Set authorization PIN for ${member.name} (leave blank for unrestricted):`, member.pin || "");
-  if (nextPin === null) return;
-  member.pin = nextPin.trim();
-  addAudit("PIN_CHANGED", `Updated authorization PIN for ${member.name} (${member.role})`);
-  saveDb(); render(); toast("Authorization PIN updated");
-}
-
-function copyPairPayload() {
-  const str = activePairingMode === "OWNER" ? gatewayInfo.ownerQrPayload : gatewayInfo.staffQrPayload;
-  if (!str) return;
-  navigator.clipboard?.writeText(str).catch(() => {});
-  toast("Pairing payload copied");
-}
-
-function saveShop() {
-  if (!guardAction("admin", "updating facility licensing details")) return;
-  db.shop.name = document.getElementById("aName").value.trim() || "SSEDDUME DRUG SHOP MANAGEMENT SYSTEM";
-  db.shop.nda = document.getElementById("aNda").value.trim();
-  db.shop.lg = document.getElementById("aLg").value.trim();
-  addAudit("LICENSING_UPDATE", "Updated facility and regulatory licence metadata");
-  saveDb(); render(); toast("Licensing saved");
-}
-
 function exportBundleJson() {
-  const snap = JSON.parse(JSON.stringify(db));
-  const bCode = gatewayInfo.branchCode || db.shop.branchCode || "LOC-MAIN";
-  const bName = gatewayInfo.branchName || db.shop.branchName || "MAIN BRANCH";
-  const pkg = {
-    system: "SSEDDUME DRUG SHOP MANAGEMENT SYSTEM",
-    branchCode: bCode,
-    branchName: bName,
-    exportedAt: nowIso(),
-    checksum: checksum(snap),
-    data: snap
-  };
-  const blob = new Blob([JSON.stringify(pkg, null, 2)], { type: "application/json" });
+  const pkg = { branchCode: gatewayInfo.branchCode, exportedAt: nowIso(), data: db };
   const a = document.createElement("a");
-  a.href = URL.createObjectURL(blob);
-  a.download = `sseddume-${bCode.toLowerCase()}-snapshot-${todayStr()}.json`;
+  a.href = URL.createObjectURL(new Blob([JSON.stringify(pkg, null, 2)], { type: "application/json" }));
+  a.download = `sseddume-${(gatewayInfo.branchCode || "loc-main").toLowerCase()}-${todayStr()}.json`;
   a.click();
-  toast("Branch snapshot exported");
 }
-
 async function importBundleJson(ev) {
-  if (!guardAction("admin", "importing external data snapshots")) { ev.target.value = ""; return; }
   const f = ev.target.files?.[0];
   ev.target.value = "";
   if (!f) return;
-  try {
-    const raw = JSON.parse(await f.text());
-    const payload = raw?.snapshot && typeof raw.snapshot === "object" ? raw.snapshot : (raw?.data && typeof raw.data === "object" ? raw.data : raw);
-    if (raw?.checksum && checksum(payload) !== raw.checksum) return alert("Checksum verification failed — snapshot is corrupted.");
-    if (!Array.isArray(payload.medicines) || !Array.isArray(payload.batches) || !Array.isArray(payload.sales)) return alert("Invalid snapshot structure.");
-
-    const localBranch = gatewayInfo.branchCode || db.shop.branchCode || "LOC-MAIN";
-    if (raw?.branchCode && raw.branchCode !== localBranch) {
-      const ok = confirm(`Warning: This snapshot belongs to branch "${raw.branchName || raw.branchCode}" (${raw.branchCode}), while this station is "${localBranch}". Import anyway?`);
-      if (!ok) return;
-    }
-
-    for (const m of payload.medicines) {
-      const i = db.medicines.findIndex(x => x.id === m.id);
-      if (i >= 0) Object.assign(db.medicines[i], m);
-      else db.medicines.push(m);
-    }
-    for (const b of payload.batches) {
-      const i = db.batches.findIndex(x => x.id === b.id);
-      if (i < 0) db.batches.push(b);
-      else if (db.batches[i].qty === 0 && b.qty > 0) db.batches[i].qty = b.qty;
-    }
-    for (const s of payload.sales) {
-      if (!db.sales.some(x => x.id === s.id)) db.sales.unshift(s);
-    }
-    if (payload.shop) {
-      db.shop = {
-        ...db.shop,
-        ...payload.shop,
-        branchCode: localBranch,
-        branchName: gatewayInfo.branchName || db.shop.branchName
-      };
-    }
-    addAudit("SNAPSHOT_IMPORT", `Merged snapshot ${f.name}`);
-    saveDb(); render(); toast("Snapshot merged");
-  } catch (err) {
-    alert("Snapshot import error: " + (err?.message || err));
-  }
+  const raw = JSON.parse(await f.text());
+  const payload = raw?.data || raw;
+  if (Array.isArray(payload.medicines)) db.medicines = payload.medicines;
+  if (Array.isArray(payload.batches)) db.batches = payload.batches;
+  if (Array.isArray(payload.sales)) db.sales = payload.sales;
+  saveDb(); render(); toast("Snapshot imported");
 }
 
 (async () => {
-  await fetchGatewayInfo();
   db = loadDb();
-  db.shop.branchCode = gatewayInfo.branchCode || db.shop.branchCode || "LOC-MAIN";
-  db.shop.branchName = gatewayInfo.branchName || db.shop.branchName || "MAIN BRANCH";
   currentOperator = db.staff.find(s => s.active !== false) || db.staff[0];
   renderTopbar();
   render();
-  pollGatewayEvents();
-  flushCloudOutbox();
+  postNativeCmd({ cmd: "GET_GATEWAY_INFO" });
+  postNativeCmd({ cmd: "POLL_EVENTS" });
 })();
 </script>
 </body>
